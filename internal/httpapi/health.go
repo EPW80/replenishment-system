@@ -53,7 +53,7 @@ func (h HealthChecker) Health(w http.ResponseWriter, r *http.Request) {
 		resp.Status = "unhealthy"
 		resp.Database = "unreachable"
 		resp.Migrations = "unknown"
-		resp.Detail = err.Error()
+		resp.Detail = "database unreachable"
 		code = http.StatusServiceUnavailable
 	} else if h.MigrationStatus != nil {
 		applied, pending, err := h.MigrationStatus(ctx, h.DB)
