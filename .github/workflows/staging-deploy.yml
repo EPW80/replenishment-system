@@ -1,0 +1,75 @@
+name: Staging deploy
+
+on:
+  workflow_call:
+    inputs:
+      commit-sha:
+        description: Full 40-character commit SHA to deploy.
+        required: true
+        type: string
+      environment:
+        description: GitHub Environment name holding the deploy credentials.
+        required: false
+        type: string
+        default: staging
+    outputs:
+      url:
+        description: URL the deployment is serving on, for the health check.
+        value: ${{ jobs.staging-deploy.outputs.url }}
+
+permissions: {}
+
+jobs:
+  staging-deploy:
+    name: Staging deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read   # for actions/checkout, nothing else
+      # id-token: write   # uncomment if the provider supports OIDC -- preferred over
+                          # a stored token, since it leaves no standing credential
+    # This job binds the environment, so it can read Environment-scoped secrets.
+    # deploy.yml CANNOT forward them: a job calling a reusable workflow may not declare
+    # environment:, and an unset secret resolves to an empty string with no error.
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ steps.deploy.outputs.url }}
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      # Functional guard -- keep it. Deploy targets are always full SHAs, never
+      # branches or tags, because a branch moves and an approval must not.
+      - name: Validate commit SHA
+        env:
+          COMMIT_SHA: ${{ inputs.commit-sha }}
+        run: |
+          if ! printf '%s' "$COMMIT_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::commit-sha must be a full 40-character lowercase hex SHA, got: $COMMIT_SHA"
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+        with:
+          ref: ${{ inputs.commit-sha }}
+          persist-credentials: false
+
+      # ------------------------------------------------------------------
+      # CUSTOMIZE: replace this step with the real deploy command.
+      #
+      # It must set its url output so staging-health-check has a target:
+      #   echo "url=https://staging.example.com" >> "$GITHUB_OUTPUT"
+      #
+      # Read Environment secrets here, in this job:
+      #   env:
+      #     TOKEN: ${{ secrets.YOUR_SECRET_NAME }}
+      #
+      # This fails on purpose. The Coolify deploy mechanism and its credentials do
+      # not exist yet, and a step that exited 0 without deploying would let
+      # production-health-check pass against the PREVIOUSLY deployed version --
+      # reporting a successful release of code that was never shipped.
+      # ------------------------------------------------------------------
+      - name: Deploy to staging
+        id: deploy
+        run: |
+          echo "::error::Staging deploy is not configured. Replace this step in .github/workflows/staging-deploy.yml"
+          exit 1

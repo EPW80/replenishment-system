@@ -1,0 +1,24 @@
+name: Chore
+description: Maintenance, tooling, CI, dependencies, or documentation.
+labels: ["chore"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What needs doing
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why now
+    validations:
+      required: false
+  - type: checkboxes
+    id: areas
+    attributes:
+      label: Touches
+      options:
+        - label: "`.github/workflows/` — must ship in its own PR, never bundled with a feature"
+        - label: "A `permissions:` block — widening one is a security change needing its own review"
+        - label: "Requires a new secret — say so; do not invent a value"

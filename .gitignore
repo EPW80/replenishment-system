@@ -1,0 +1,23 @@
+# Machine-specific Claude Code settings. Must not propagate between projects.
+.claude/settings.local.json
+
+# Go build output
+/bin/
+*.exe
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Local environment. Never commit real credentials — see CLAUDE.md rule 7.
+.env
+.env.local
+*.env.local
+
+# Local database volume
+/.postgres-data/
+
+# Editor and OS noise
+.DS_Store
+.idea/
+*.swp
