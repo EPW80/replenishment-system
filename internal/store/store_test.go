@@ -284,3 +284,422 @@ func TestMaxSequenceNo(t *testing.T) {
 		t.Fatalf("n=%d err=%v, want 5", n, err)
 	}
 }
+
+// ------------------------------------------------- spec §6 transition primitives
+
+func TestUpdateScheduleStatusClearsPausedUntilOnResume(t *testing.T) {
+	_, repo := newTestDB(t)
+	ctx := context.Background()
+	s := newSchedule(t, repo, domain.NewDate(2026, time.January, 1), 30)
+
+	until := domain.NewDate(2026, time.March, 1)
+	if err := repo.UpdateScheduleStatus(ctx, s.ID, domain.SchedulePaused, &until); err != nil {
+		t.Fatalf("pause: %v", err)
+	}
+	if err := repo.UpdateScheduleStatus(ctx, s.ID, domain.ScheduleActive, nil); err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+
+	got, err := repo.GetSchedule(ctx, s.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != domain.ScheduleActive {
+		t.Errorf("status = %s, want active", got.Status)
+	}
+	if got.PausedUntil != nil {
+		t.Errorf("paused_until = %s on an active schedule, want nil", got.PausedUntil)
+	}
+}
+
+// The schema's schedules_paused_until_requires_paused CHECK forbids this combination.
+// Catching it here gives the caller a usable error rather than a constraint violation.
+func TestUpdateScheduleStatusRejectsPausedUntilOnActiveSchedule(t *testing.T) {
+	_, repo := newTestDB(t)
+	s := newSchedule(t, repo, domain.NewDate(2026, time.January, 1), 30)
+
+	until := domain.NewDate(2026, time.March, 1)
+	if err := repo.UpdateScheduleStatus(context.Background(), s.ID, domain.ScheduleActive, &until); err == nil {
+		t.Fatal("paused_until was accepted on an active schedule")
+	}
+}
+
+func TestUpdateScheduleCadenceValidatesInterval(t *testing.T) {
+	_, repo := newTestDB(t)
+	ctx := context.Background()
+	s := newSchedule(t, repo, domain.NewDate(2026, time.January, 1), 30)
+	anchor := domain.NewDate(2026, time.June, 1)
+
+	for _, bad := range []int{0, 6, 181} {
+		if err := repo.UpdateScheduleCadence(ctx, s.ID, bad, anchor); err == nil {
+			t.Errorf("interval of %d days was accepted", bad)
+		}
+	}
+	if err := repo.UpdateScheduleCadence(ctx, s.ID, 45, anchor); err != nil {
+		t.Fatalf("valid cadence rejected: %v", err)
+	}
+
+	got, _ := repo.GetSchedule(ctx, s.ID)
+	if got.IntervalDays != 45 || !got.AnchorDate.Equal(anchor) {
+		t.Errorf("cadence = %d days from %s, want 45 from %s", got.IntervalDays, got.AnchorDate, anchor)
+	}
+}
+
+// Spec §3: a placed order is settled. Nothing may rewrite it, including a skip that
+// races an execution.
+func TestUpdateOccurrenceStatusRefusesPlacedOrders(t *testing.T) {
+	_, repo := newTestDB(t)
+	ctx := context.Background()
+	s := newSchedule(t, repo, domain.NewDate(2026, time.January, 1), 30)
+
+	orderID := "wc_1001"
+	occ := occurrence(s.ID, 1, domain.NewDate(2026, time.January, 31))
+	occ.Status = domain.OccurrencePlaced
+	occ.OrderID = &orderID
+	if err := repo.CreateOccurrence(ctx, occ); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if err := repo.UpdateOccurrenceStatus(ctx, occ.ID, domain.OccurrenceSkipped); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("skipping a placed order returned %v, want ErrNotFound", err)
+	}
+	got, _ := repo.ListOccurrences(ctx, s.ID)
+	if got[0].Status != domain.OccurrencePlaced {
+		t.Errorf("status = %s, want the placed order untouched", got[0].Status)
+	}
+}
+
+func TestUpdateOccurrenceDateOnlyMovesUnsettledOrders(t *testing.T) {
+	_, repo := newTestDB(t)
+	ctx := context.Background()
+	s := newSchedule(t, repo, domain.NewDate(2026, time.January, 1), 30)
+
+	open := occurrence(s.ID, 1, domain.NewDate(2026, time.January, 31))
+	if err := repo.CreateOccurrence(ctx, open); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	settled := occurrence(s.ID, 2, domain.NewDate(2026, time.March, 2))
+	settled.Status = domain.OccurrenceSkipped
+	if err := repo.CreateOccurrence(ctx, settled); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	moved := domain.NewDate(2026, time.February, 7)
+	if err := repo.UpdateOccurrenceDate(ctx, open.ID, moved); err != nil {
+		t.Fatalf("defer: %v", err)
+	}
+	if err := repo.UpdateOccurrenceDate(ctx, settled.ID, moved); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("deferring a skipped order returned %v, want ErrNotFound", err)
+	}
+
+	for _, o := range mustList(t, repo, s.ID) {
+		if o.SequenceNo == 1 && !o.ScheduledFor.Equal(moved) {
+			t.Errorf("open occurrence at %s, want %s", o.ScheduledFor, moved)
+		}
+		if o.SequenceNo == 2 && !o.ScheduledFor.Equal(settled.ScheduledFor) {
+			t.Errorf("settled occurrence moved to %s", o.ScheduledFor)
+		}
+	}
+}
+
+// Spec §5: a cadence change rewrites planned occurrences but leaves pending ones
+// alone, because a pending occurrence has already had its pre-billing notice sent.
+func TestCancelPlannedVersusUnexecutedOccurrences(t *testing.T) {
+	_, repo := newTestDB(t)
+	ctx := context.Background()
+
+	build := func() (domain.Schedule, domain.Occurrence, domain.Occurrence) {
+		s := newSchedule(t, repo, domain.NewDate(2026, time.January, 1), 30)
+		planned := occurrence(s.ID, 1, domain.NewDate(2026, time.January, 31))
+		if err := repo.CreateOccurrence(ctx, planned); err != nil {
+			t.Fatalf("create planned: %v", err)
+		}
+		pending := occurrence(s.ID, 2, domain.NewDate(2026, time.March, 2))
+		if err := repo.CreateOccurrence(ctx, pending); err != nil {
+			t.Fatalf("create pending: %v", err)
+		}
+		if err := repo.UpdateOccurrenceStatus(ctx, pending.ID, domain.OccurrencePending); err != nil {
+			t.Fatalf("arm: %v", err)
+		}
+		return s, planned, pending
+	}
+
+	// CancelPlannedOccurrences spares the pending one.
+	s, _, pending := build()
+	n, err := repo.CancelPlannedOccurrences(ctx, s.ID)
+	if err != nil {
+		t.Fatalf("cancel planned: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("canceled %d, want only the planned one", n)
+	}
+	for _, o := range mustList(t, repo, s.ID) {
+		if o.ID == pending.ID && o.Status != domain.OccurrencePending {
+			t.Errorf("pending occurrence became %s; its pre-billing notice was already sent", o.Status)
+		}
+	}
+
+	// CancelUnexecutedOccurrences takes both — that is pause and cancel.
+	s2, _, _ := build()
+	n, err = repo.CancelUnexecutedOccurrences(ctx, s2.ID)
+	if err != nil {
+		t.Fatalf("cancel unexecuted: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("canceled %d, want both", n)
+	}
+	for _, o := range mustList(t, repo, s2.ID) {
+		if o.Status != domain.OccurrenceCanceled {
+			t.Errorf("occurrence %d left in %s", o.SequenceNo, o.Status)
+		}
+	}
+}
+
+// "Next" means the order arriving soonest, not the lowest sequence number. After a
+// defer the two disagree, and the customer means the date.
+func TestNextActionableOccurrenceOrdersByDate(t *testing.T) {
+	_, repo := newTestDB(t)
+	ctx := context.Background()
+	s := newSchedule(t, repo, domain.NewDate(2026, time.January, 1), 30)
+
+	first := occurrence(s.ID, 1, domain.NewDate(2026, time.January, 31))
+	second := occurrence(s.ID, 2, domain.NewDate(2026, time.March, 2))
+	for _, o := range []domain.Occurrence{first, second} {
+		if err := repo.CreateOccurrence(ctx, o); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+	}
+
+	// Push the lower sequence number past the higher one.
+	if err := repo.UpdateOccurrenceDate(ctx, first.ID, domain.NewDate(2026, time.April, 1)); err != nil {
+		t.Fatalf("defer: %v", err)
+	}
+
+	got, err := repo.NextActionableOccurrence(ctx, s.ID)
+	if err != nil {
+		t.Fatalf("next: %v", err)
+	}
+	if got.SequenceNo != 2 {
+		t.Errorf("next occurrence is sequence %d, want 2 — the soonest date, not the lowest number", got.SequenceNo)
+	}
+}
+
+func TestNextActionableOccurrenceSkipsSettledOnes(t *testing.T) {
+	_, repo := newTestDB(t)
+	ctx := context.Background()
+	s := newSchedule(t, repo, domain.NewDate(2026, time.January, 1), 30)
+
+	if _, err := repo.NextActionableOccurrence(ctx, s.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("empty schedule returned %v, want ErrNotFound", err)
+	}
+
+	settled := occurrence(s.ID, 1, domain.NewDate(2026, time.January, 31))
+	settled.Status = domain.OccurrenceSkipped
+	if err := repo.CreateOccurrence(ctx, settled); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := repo.NextActionableOccurrence(ctx, s.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a schedule with only settled orders returned %v, want ErrNotFound", err)
+	}
+}
+
+func TestLastPlacedOccurrence(t *testing.T) {
+	_, repo := newTestDB(t)
+	ctx := context.Background()
+	s := newSchedule(t, repo, domain.NewDate(2026, time.January, 1), 30)
+
+	if _, err := repo.LastPlacedOccurrence(ctx, s.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a schedule that never shipped returned %v, want ErrNotFound", err)
+	}
+
+	for i, date := range []domain.Date{
+		domain.NewDate(2026, time.January, 31),
+		domain.NewDate(2026, time.March, 2),
+	} {
+		o := occurrence(s.ID, i+1, date)
+		o.Status = domain.OccurrencePlaced
+		if err := repo.CreateOccurrence(ctx, o); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+	}
+	// A planned occurrence further out must not win.
+	if err := repo.CreateOccurrence(ctx, occurrence(s.ID, 3, domain.NewDate(2026, time.April, 1))); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	got, err := repo.LastPlacedOccurrence(ctx, s.ID)
+	if err != nil {
+		t.Fatalf("last placed: %v", err)
+	}
+	if want := domain.NewDate(2026, time.March, 2); !got.ScheduledFor.Equal(want) {
+		t.Errorf("last placed = %s, want %s", got.ScheduledFor, want)
+	}
+}
+
+func TestLatestScheduledDate(t *testing.T) {
+	_, repo := newTestDB(t)
+	ctx := context.Background()
+	s := newSchedule(t, repo, domain.NewDate(2026, time.January, 1), 30)
+
+	got, err := repo.LatestScheduledDate(ctx, s.ID)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("latest = %s on an empty schedule, want nil", got)
+	}
+
+	furthest := domain.NewDate(2026, time.April, 1)
+	for i, date := range []domain.Date{domain.NewDate(2026, time.January, 31), furthest} {
+		if err := repo.CreateOccurrence(ctx, occurrence(s.ID, i+1, date)); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+	}
+	// A settled occurrence beyond the horizon must not extend it.
+	settled := occurrence(s.ID, 3, domain.NewDate(2027, time.January, 1))
+	settled.Status = domain.OccurrenceCanceled
+	if err := repo.CreateOccurrence(ctx, settled); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	got, err = repo.LatestScheduledDate(ctx, s.ID)
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if got == nil || !got.Equal(furthest) {
+		t.Errorf("latest = %v, want %s", got, furthest)
+	}
+}
+
+// ------------------------------------------------------------------ transactions
+
+// A transition and the event recording it commit together or not at all. An event log
+// that disagrees with the state it describes is not an audit trail.
+func TestInTxRollsBackEverythingOnError(t *testing.T) {
+	_, repo := newTestDB(t)
+	ctx := context.Background()
+	s := newSchedule(t, repo, domain.NewDate(2026, time.January, 1), 30)
+
+	sentinel := errors.New("transition failed partway")
+	err := repo.InTx(ctx, func(tx store.Repository) error {
+		if err := tx.UpdateScheduleStatus(ctx, s.ID, domain.SchedulePaused, nil); err != nil {
+			return err
+		}
+		if err := tx.AppendEvent(ctx, domain.ScheduleEvent{
+			ScheduleID: s.ID,
+			EventType:  domain.EventSchedulePaused,
+			Actor:      domain.ActorCustomer,
+		}); err != nil {
+			return err
+		}
+		return sentinel
+	})
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("InTx returned %v, want the caller's error", err)
+	}
+
+	got, err := repo.GetSchedule(ctx, s.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != domain.ScheduleActive {
+		t.Errorf("status = %s after a rolled-back transition, want active", got.Status)
+	}
+	events, err := repo.ListEvents(ctx, s.ID)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	if len(events) != 0 {
+		t.Errorf("%d events survived the rollback — the log now describes a state that "+
+			"never existed", len(events))
+	}
+}
+
+func TestInTxCommitsOnSuccess(t *testing.T) {
+	_, repo := newTestDB(t)
+	ctx := context.Background()
+	s := newSchedule(t, repo, domain.NewDate(2026, time.January, 1), 30)
+
+	err := repo.InTx(ctx, func(tx store.Repository) error {
+		if err := tx.UpdateScheduleStatus(ctx, s.ID, domain.SchedulePaused, nil); err != nil {
+			return err
+		}
+		return tx.AppendEvent(ctx, domain.ScheduleEvent{
+			ScheduleID: s.ID,
+			EventType:  domain.EventSchedulePaused,
+			Actor:      domain.ActorCustomer,
+		})
+	})
+	if err != nil {
+		t.Fatalf("InTx: %v", err)
+	}
+
+	got, _ := repo.GetSchedule(ctx, s.ID)
+	if got.Status != domain.SchedulePaused {
+		t.Errorf("status = %s, want paused", got.Status)
+	}
+	if events, _ := repo.ListEvents(ctx, s.ID); len(events) != 1 {
+		t.Errorf("got %d events, want 1", len(events))
+	}
+}
+
+// A service method composed of others must still commit atomically, so a nested InTx
+// joins the outer transaction rather than opening a second one that can half-commit.
+func TestInTxNestsIntoTheOuterTransaction(t *testing.T) {
+	_, repo := newTestDB(t)
+	ctx := context.Background()
+	s := newSchedule(t, repo, domain.NewDate(2026, time.January, 1), 30)
+
+	sentinel := errors.New("outer failed")
+	err := repo.InTx(ctx, func(tx store.Repository) error {
+		if err := tx.InTx(ctx, func(inner store.Repository) error {
+			return inner.UpdateScheduleStatus(ctx, s.ID, domain.SchedulePaused, nil)
+		}); err != nil {
+			return err
+		}
+		return sentinel
+	})
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("InTx returned %v, want the caller's error", err)
+	}
+
+	got, _ := repo.GetSchedule(ctx, s.ID)
+	if got.Status != domain.ScheduleActive {
+		t.Errorf("status = %s — the inner transaction committed independently of the outer one", got.Status)
+	}
+}
+
+// CreateSchedule writes the schedule and its items in one transaction; a bad item must
+// leave no half-built schedule behind.
+func TestCreateScheduleIsAtomic(t *testing.T) {
+	_, repo := newTestDB(t)
+	ctx := context.Background()
+
+	s := domain.Schedule{
+		ID:           uuid.NewString(),
+		CustomerID:   "cust_" + uuid.NewString()[:8],
+		Status:       domain.ScheduleActive,
+		IntervalDays: 30,
+		AnchorDate:   domain.NewDate(2026, time.January, 1),
+		Timezone:     "UTC",
+	}
+	items := []domain.ScheduleItem{
+		{ID: uuid.NewString(), ScheduleID: s.ID, SKU: "SKU-001", Quantity: 1},
+		{ID: uuid.NewString(), ScheduleID: s.ID, SKU: "SKU-002", Quantity: 0}, // violates the CHECK
+	}
+	if err := repo.CreateSchedule(ctx, s, items); err == nil {
+		t.Fatal("a zero-quantity item was accepted")
+	}
+	if _, err := repo.GetSchedule(ctx, s.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("get returned %v, want ErrNotFound — a half-built schedule survived", err)
+	}
+}
+
+func mustList(t *testing.T, repo *store.PostgresRepository, scheduleID string) []domain.Occurrence {
+	t.Helper()
+	got, err := repo.ListOccurrences(context.Background(), scheduleID)
+	if err != nil {
+		t.Fatalf("list occurrences: %v", err)
+	}
+	return got
+}

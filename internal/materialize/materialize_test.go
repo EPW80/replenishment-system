@@ -296,3 +296,119 @@ func TestRunAcrossDSTBoundary(t *testing.T) {
 		}
 	}
 }
+
+// Re-anchoring must not push the next order out by the schedule's whole history.
+//
+// This is the regression test for conflating two different numbers. sequence_no is a
+// monotonic counter that never restarts, because a reused number is a reused
+// idempotency key and therefore a duplicate charge. The cadence index is the n in
+// anchor + (n × interval_days). They coincide only until something re-anchors the
+// schedule, and spec §6 re-anchors on both resume and change_cadence.
+//
+// Before the fix, a schedule with three occurrences behind it that re-anchored to
+// June 1 planned its next order at anchor + (4 × 30) = September 29 — four intervals
+// out — instead of July 1. The customer's first order back would have been three
+// months late, and every later one wrong by the same drift.
+func TestRunAfterReAnchorPlansOneIntervalOut(t *testing.T) {
+	db, repo := setup(t)
+	ctx := context.Background()
+
+	s := newSchedule(t, db, repo, domain.NewDate(2026, time.January, 1), 30)
+	m := materialize.New(repo, 3, nil)
+
+	if _, _, err := m.Run(ctx, s, domain.NewDate(2026, time.January, 15)); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	before, _ := repo.ListOccurrences(ctx, s.ID)
+	if len(before) != 3 {
+		t.Fatalf("setup: got %d occurrences, want 3", len(before))
+	}
+
+	// Simulate a resume: the old horizon is cleared and the schedule re-anchors.
+	if _, err := repo.CancelUnexecutedOccurrences(ctx, s.ID); err != nil {
+		t.Fatalf("clear horizon: %v", err)
+	}
+	newAnchor := domain.NewDate(2026, time.June, 1)
+	if err := repo.UpdateScheduleCadence(ctx, s.ID, 30, newAnchor); err != nil {
+		t.Fatalf("re-anchor: %v", err)
+	}
+	s.AnchorDate = newAnchor
+
+	if _, _, err := m.Run(ctx, s, newAnchor); err != nil {
+		t.Fatalf("run after re-anchor: %v", err)
+	}
+
+	planned, err := repo.ListPlannedOccurrences(ctx, s.ID)
+	if err != nil {
+		t.Fatalf("list planned: %v", err)
+	}
+	if len(planned) != 3 {
+		t.Fatalf("got %d planned occurrences after re-anchor, want 3", len(planned))
+	}
+
+	// Dates come from the new anchor: July 1, July 31, August 30.
+	for i, o := range planned {
+		want := newAnchor.AddDays(30 * (i + 1))
+		if !o.ScheduledFor.Equal(want) {
+			t.Errorf("occurrence %d scheduled for %s, want %s — the cadence index was "+
+				"taken from sequence_no instead of the new anchor", i+1, o.ScheduledFor, want)
+		}
+	}
+
+	// Sequence numbers continue past the history rather than restarting, so no
+	// idempotency key is ever reused.
+	all, _ := repo.ListOccurrences(ctx, s.ID)
+	seen := map[int]bool{}
+	keys := map[string]bool{}
+	for _, o := range all {
+		if seen[o.SequenceNo] {
+			t.Fatalf("sequence number %d reused — that is a reused idempotency key", o.SequenceNo)
+		}
+		seen[o.SequenceNo] = true
+		if keys[o.IdempotencyKey] {
+			t.Fatalf("idempotency key %q reused", o.IdempotencyKey)
+		}
+		keys[o.IdempotencyKey] = true
+	}
+	for _, o := range planned {
+		if o.SequenceNo <= 3 {
+			t.Errorf("post-re-anchor occurrence reused sequence number %d from before it", o.SequenceNo)
+		}
+	}
+}
+
+// A shorter cadence must take effect from the new anchor, not from wherever the old
+// cadence had reached.
+func TestRunAfterCadenceChangeUsesNewInterval(t *testing.T) {
+	db, repo := setup(t)
+	ctx := context.Background()
+
+	s := newSchedule(t, db, repo, domain.NewDate(2026, time.January, 1), 90)
+	m := materialize.New(repo, 2, nil)
+	if _, _, err := m.Run(ctx, s, domain.NewDate(2026, time.January, 15)); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	if _, err := repo.CancelUnexecutedOccurrences(ctx, s.ID); err != nil {
+		t.Fatalf("clear horizon: %v", err)
+	}
+
+	anchor := domain.NewDate(2026, time.February, 1)
+	if err := repo.UpdateScheduleCadence(ctx, s.ID, 14, anchor); err != nil {
+		t.Fatalf("change cadence: %v", err)
+	}
+	s.AnchorDate, s.IntervalDays = anchor, 14
+
+	if _, _, err := m.Run(ctx, s, anchor); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	planned, _ := repo.ListPlannedOccurrences(ctx, s.ID)
+	if len(planned) != 2 {
+		t.Fatalf("got %d planned, want 2", len(planned))
+	}
+	for i, o := range planned {
+		want := anchor.AddDays(14 * (i + 1))
+		if !o.ScheduledFor.Equal(want) {
+			t.Errorf("occurrence %d at %s, want %s", i+1, o.ScheduledFor, want)
+		}
+	}
+}

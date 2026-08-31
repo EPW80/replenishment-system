@@ -13,6 +13,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/EPW80/replenishment-system/internal/httpapi"
+	"github.com/EPW80/replenishment-system/internal/materialize"
+	"github.com/EPW80/replenishment-system/internal/schedule"
 	"github.com/EPW80/replenishment-system/internal/store"
 	"github.com/EPW80/replenishment-system/internal/testsupport"
 )
@@ -25,6 +27,10 @@ func newAPI(t *testing.T) (http.Handler, *store.PostgresRepository, *sql.DB) {
 	h := httpapi.NewServiceRouter(
 		httpapi.HealthChecker{DB: db, BuildSHA: "test", MigrationStatus: store.MigrationStatus},
 		httpapi.ScheduleHandler{Repo: repo, Now: time.Now},
+		httpapi.TransitionHandler{
+			Service: schedule.New(repo, materialize.New(repo, 3, nil), time.Now),
+			Repo:    repo,
+		},
 	)
 	return h, repo, db
 }

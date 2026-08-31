@@ -124,17 +124,23 @@ func (h ScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	// The schedule and the event recording its creation commit together. Writing them
+	// as two calls left a window where a schedule existed with no creation event, and
+	// the event log is what the spec §8 read models project from — a schedule missing
+	// from it is invisible to every cohort and churn number thereafter.
 	ctx := r.Context()
-	if err := h.Repo.CreateSchedule(ctx, s, items); err != nil {
+	err = h.Repo.InTx(ctx, func(tx store.Repository) error {
+		if err := tx.CreateSchedule(ctx, s, items); err != nil {
+			return err
+		}
+		return tx.AppendEvent(ctx, domain.ScheduleEvent{
+			ScheduleID: s.ID,
+			EventType:  domain.EventScheduleCreated,
+			Actor:      domain.ActorCustomer,
+		})
+	})
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not create schedule")
-		return
-	}
-	if err := h.Repo.AppendEvent(ctx, domain.ScheduleEvent{
-		ScheduleID: s.ID,
-		EventType:  domain.EventScheduleCreated,
-		Actor:      domain.ActorCustomer,
-	}); err != nil {
-		writeError(w, http.StatusInternalServerError, "could not record schedule creation")
 		return
 	}
 

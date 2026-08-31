@@ -132,4 +132,13 @@ const (
 	EventScheduleCreated      = "schedule.created"
 	EventOccurrencePlanned    = "occurrence.planned"
 	EventOccurrenceMaterialed = "occurrence.materialized"
+
+	// Spec §6 transitions. Each carries the actor who caused it and, for a
+	// cancellation, the reason code the churn analysis in spec §8 aggregates.
+	EventSchedulePaused         = "schedule.paused"
+	EventScheduleResumed        = "schedule.resumed"
+	EventScheduleCadenceChanged = "schedule.cadence_changed"
+	EventScheduleCanceled       = "schedule.canceled"
+	EventOccurrenceSkipped      = "occurrence.skipped"
+	EventOccurrenceDeferred     = "occurrence.deferred"
 )

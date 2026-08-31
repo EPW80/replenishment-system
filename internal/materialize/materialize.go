@@ -50,6 +50,17 @@ func New(repo store.Repository, horizon int, log *slog.Logger) *Materializer {
 	return &Materializer{repo: repo, horizon: horizon, log: log, newID: func() string { return uuid.NewString() }}
 }
 
+// WithRepo returns a copy of the materializer bound to repo.
+//
+// A spec §6 transition re-materializes as part of its own transaction, so it needs a
+// materializer speaking to that transaction rather than to the pool. Copying keeps the
+// horizon and logger while swapping only the data access.
+func (m *Materializer) WithRepo(repo store.Repository) *Materializer {
+	c := *m
+	c.repo = repo
+	return &c
+}
+
 // Result reports what one run did.
 type Result struct {
 	SchedulesConsidered int
@@ -105,44 +116,54 @@ func (m *Materializer) Run(ctx context.Context, s domain.Schedule, today domain.
 	}
 	missing := m.horizon - existing
 	if missing <= 0 {
-		return 0, 0, nil
+		// The horizon is full, but the *earliest* date may still have moved — a skip
+		// or a defer changes which occurrence is next without changing how many are
+		// planned. Refresh before returning rather than leaving next_run_date stale.
+		return 0, 0, m.RefreshNextRunDate(ctx, s, today)
 	}
 
-	// Continue from the highest sequence number already used, so a schedule that has
-	// executed occurrences 1-5 plans 6 next. Sequence numbers are never reused: the
-	// idempotency key derives from them, and a reused key is a duplicate charge.
+	// sequence_no and the cadence index are two different numbers and must not be
+	// conflated.
+	//
+	// sequence_no is a monotonic per-schedule counter whose only job is to make the
+	// idempotency key unique and stable: it continues from the highest already used,
+	// so a schedule that has executed 1-5 plans 6 next, and a number is never reused
+	// because a reused key is a duplicate charge.
+	//
+	// The cadence index is the n in anchor + (n × interval_days). It is derived from
+	// the schedule's *current* anchor every time, never stored and never assumed equal
+	// to sequence_no — resume and change_cadence both re-anchor (spec §6), and after
+	// either one the two numbers diverge permanently.
 	maxSeq, err := m.repo.MaxSequenceNo(ctx, s.ID)
 	if err != nil {
 		return 0, 0, err
 	}
+	seq := maxSeq
 
-	seq := maxSeq + 1
-	if maxSeq == 0 {
-		// Nothing planned yet: start at the first occurrence falling after today, so
-		// a schedule created with an old anchor does not materialize the past.
-		firstSeq, _, err := domain.NextOccurrenceAfter(s.AnchorDate, s.IntervalDays, today)
-		if err != nil {
-			return 0, 0, err
-		}
-		seq = firstSeq
+	// Continue the cadence from the furthest-out date already spoken for, or from
+	// today when there is none. Starting at today is what stops a schedule with an old
+	// anchor from materializing the past.
+	cursor := today
+	latest, err := m.repo.LatestScheduledDate(ctx, s.ID)
+	if err != nil {
+		return 0, 0, err
+	}
+	if latest != nil && latest.After(cursor) {
+		cursor = *latest
 	}
 
 	var earliest *domain.Date
 	for i := 0; i < missing; i++ {
-		date, err := domain.OccurrenceDate(s.AnchorDate, s.IntervalDays, seq)
+		// Anchor-relative, every time: NextOccurrenceAfter returns anchor + (n ×
+		// interval) for the first n landing strictly after the cursor. Advancing the
+		// cursor to each date it returns walks the cadence forward without ever
+		// accumulating one interval onto the last (spec §3, docs/adr/0004).
+		_, date, err := domain.NextOccurrenceAfter(s.AnchorDate, s.IntervalDays, cursor)
 		if err != nil {
 			return created, duplicates, err
 		}
-
-		// Skip forward past any date already behind us, which can happen on a
-		// schedule that was paused for longer than one interval.
-		for !date.After(today) {
-			seq++
-			date, err = domain.OccurrenceDate(s.AnchorDate, s.IntervalDays, seq)
-			if err != nil {
-				return created, duplicates, err
-			}
-		}
+		cursor = date
+		seq++
 
 		occ := domain.Occurrence{
 			ID:             m.newID(),
@@ -175,19 +196,23 @@ func (m *Materializer) Run(ctx context.Context, s domain.Schedule, today domain.
 				return created, duplicates, err
 			}
 		}
-		seq++
 	}
 
 	// next_run_date is materialized for the indexed query in spec §3. It is derived
 	// from the anchor like every other date, never accumulated.
-	if err := m.refreshNextRunDate(ctx, s, today); err != nil {
+	if err := m.RefreshNextRunDate(ctx, s, today); err != nil {
 		return created, duplicates, err
 	}
 	return created, duplicates, nil
 }
 
-// refreshNextRunDate recomputes the schedule's next run from its planned occurrences.
-func (m *Materializer) refreshNextRunDate(ctx context.Context, s domain.Schedule, today domain.Date) error {
+// RefreshNextRunDate recomputes the schedule's next run from its planned occurrences.
+//
+// Exported because the spec §6 transitions need it on its own: skipping or deferring
+// changes which occurrence is next without creating one, and next_run_date backs the
+// indexed query in spec §3, so a stale value hides a schedule from the execution
+// sweep.
+func (m *Materializer) RefreshNextRunDate(ctx context.Context, s domain.Schedule, today domain.Date) error {
 	planned, err := m.repo.ListPlannedOccurrences(ctx, s.ID)
 	if err != nil {
 		return err

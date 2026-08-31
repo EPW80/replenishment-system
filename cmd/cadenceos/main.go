@@ -17,6 +17,8 @@ import (
 
 	"github.com/EPW80/replenishment-system/internal/config"
 	"github.com/EPW80/replenishment-system/internal/httpapi"
+	"github.com/EPW80/replenishment-system/internal/materialize"
+	"github.com/EPW80/replenishment-system/internal/schedule"
 	"github.com/EPW80/replenishment-system/internal/store"
 )
 
@@ -56,6 +58,11 @@ func run() error {
 		return fmt.Errorf("connect to database: %w", err)
 	}
 
+	// The transitions in spec §6 re-materialize as part of their own transaction, so
+	// the service shares the horizon the nightly job uses. One definition, not two.
+	repo := store.New(db)
+	materializer := materialize.New(repo, cfg.MaterializeHorizon, slog.Default())
+
 	srv := &http.Server{
 		Addr: fmt.Sprintf(":%d", cfg.Port),
 		Handler: httpapi.NewServiceRouter(
@@ -64,7 +71,11 @@ func run() error {
 				BuildSHA:        cfg.BuildSHA,
 				MigrationStatus: store.MigrationStatus,
 			},
-			httpapi.ScheduleHandler{Repo: store.New(db), Now: time.Now},
+			httpapi.ScheduleHandler{Repo: repo, Now: time.Now},
+			httpapi.TransitionHandler{
+				Service: schedule.New(repo, materializer, time.Now),
+				Repo:    repo,
+			},
 		),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,

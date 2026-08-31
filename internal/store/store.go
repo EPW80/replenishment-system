@@ -48,13 +48,75 @@ type Repository interface {
 
 	AppendEvent(ctx context.Context, e domain.ScheduleEvent) error
 	ListEvents(ctx context.Context, scheduleID string) ([]domain.ScheduleEvent, error)
+
+	// Spec §6 transitions. Each mutates state that the event log must agree with,
+	// so callers run them inside InTx together with their AppendEvent.
+	UpdateScheduleStatus(ctx context.Context, scheduleID string, status domain.ScheduleStatus, pausedUntil *domain.Date) error
+	UpdateScheduleCadence(ctx context.Context, scheduleID string, intervalDays int, anchor domain.Date) error
+	UpdateOccurrenceStatus(ctx context.Context, occurrenceID string, status domain.OccurrenceStatus) error
+	UpdateOccurrenceDate(ctx context.Context, occurrenceID string, scheduledFor domain.Date) error
+	CancelUnexecutedOccurrences(ctx context.Context, scheduleID string) (int, error)
+	CancelPlannedOccurrences(ctx context.Context, scheduleID string) (int, error)
+	NextActionableOccurrence(ctx context.Context, scheduleID string) (domain.Occurrence, error)
+	LastPlacedOccurrence(ctx context.Context, scheduleID string) (domain.Occurrence, error)
+	LatestScheduledDate(ctx context.Context, scheduleID string) (*domain.Date, error)
+
+	// InTx runs fn against a repository scoped to a single database transaction.
+	// A transition and the event recording it commit together or not at all: an
+	// event log that disagrees with the state it describes is not an audit trail.
+	InTx(ctx context.Context, fn func(Repository) error) error
+}
+
+// dbtx is the subset of *sql.DB that the queries below need. *sql.Tx satisfies it
+// too, which is what lets one repository implementation serve both.
+type dbtx interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
 // PostgresRepository implements Repository against Postgres.
-type PostgresRepository struct{ db *sql.DB }
+type PostgresRepository struct {
+	// db is nil when this repository is scoped to a transaction, which is how
+	// InTx tells the two cases apart.
+	db   *sql.DB
+	conn dbtx
+}
 
 // New returns a Repository backed by db.
-func New(db *sql.DB) *PostgresRepository { return &PostgresRepository{db: db} }
+func New(db *sql.DB) *PostgresRepository { return &PostgresRepository{db: db, conn: db} }
+
+// InTx runs fn inside one transaction, committing if it returns nil and rolling back
+// otherwise.
+//
+// Calling it on a repository that is already transaction-scoped runs fn in that same
+// transaction rather than nesting a new one, so a service method composed of other
+// service methods still commits atomically.
+func (r *PostgresRepository) InTx(ctx context.Context, fn func(Repository) error) error {
+	return r.inTx(ctx, func(p *PostgresRepository) error { return fn(p) })
+}
+
+// inTx is InTx over the concrete type, so callers inside this package reach the
+// transaction's connection directly instead of asserting their way back to it.
+func (r *PostgresRepository) inTx(ctx context.Context, fn func(*PostgresRepository) error) error {
+	if r.db == nil {
+		return fn(r)
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := fn(&PostgresRepository{conn: tx}); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
+}
 
 // isUniqueViolation reports whether err is a Postgres unique-constraint violation on
 // the named constraint. Matched on the message rather than the pgx error type so the
@@ -75,37 +137,29 @@ func (r *PostgresRepository) CreateSchedule(ctx context.Context, s domain.Schedu
 		return fmt.Errorf("invalid timezone %q: %w", s.Timezone, err)
 	}
 
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO schedules (
-			id, customer_id, status, interval_days, anchor_date, next_run_date,
-			timezone, payment_token_ref, shipping_address_id, discount_pct, paused_until
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-		s.ID, s.CustomerID, string(s.Status), s.IntervalDays, s.AnchorDate.ToTime(),
-		datePtr(s.NextRunDate), s.Timezone, nullStr(s.PaymentTokenRef),
-		nullStr(s.ShippingAddressID), s.DiscountPct, datePtr(s.PausedUntil))
-	if err != nil {
-		return fmt.Errorf("insert schedule: %w", err)
-	}
-
-	for _, it := range items {
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO schedule_items (id, schedule_id, sku, quantity)
-			VALUES ($1,$2,$3,$4)`,
-			it.ID, s.ID, it.SKU, it.Quantity); err != nil {
-			return fmt.Errorf("insert schedule item %q: %w", it.SKU, err)
+	return r.inTx(ctx, func(tx *PostgresRepository) error {
+		_, err := tx.conn.ExecContext(ctx, `
+			INSERT INTO schedules (
+				id, customer_id, status, interval_days, anchor_date, next_run_date,
+				timezone, payment_token_ref, shipping_address_id, discount_pct, paused_until
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+			s.ID, s.CustomerID, string(s.Status), s.IntervalDays, s.AnchorDate.ToTime(),
+			datePtr(s.NextRunDate), s.Timezone, nullStr(s.PaymentTokenRef),
+			nullStr(s.ShippingAddressID), s.DiscountPct, datePtr(s.PausedUntil))
+		if err != nil {
+			return fmt.Errorf("insert schedule: %w", err)
 		}
-	}
 
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit: %w", err)
-	}
-	return nil
+		for _, it := range items {
+			if _, err := tx.conn.ExecContext(ctx, `
+				INSERT INTO schedule_items (id, schedule_id, sku, quantity)
+				VALUES ($1,$2,$3,$4)`,
+				it.ID, s.ID, it.SKU, it.Quantity); err != nil {
+				return fmt.Errorf("insert schedule item %q: %w", it.SKU, err)
+			}
+		}
+		return nil
+	})
 }
 
 const scheduleColumns = `id, customer_id, status, interval_days, anchor_date,
@@ -139,7 +193,7 @@ func scanSchedule(row interface{ Scan(...any) error }) (domain.Schedule, error) 
 }
 
 func (r *PostgresRepository) GetSchedule(ctx context.Context, id string) (domain.Schedule, error) {
-	row := r.db.QueryRowContext(ctx, `SELECT `+scheduleColumns+` FROM schedules WHERE id = $1`, id)
+	row := r.conn.QueryRowContext(ctx, `SELECT `+scheduleColumns+` FROM schedules WHERE id = $1`, id)
 	s, err := scanSchedule(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Schedule{}, ErrNotFound
@@ -151,7 +205,7 @@ func (r *PostgresRepository) GetSchedule(ctx context.Context, id string) (domain
 }
 
 func (r *PostgresRepository) querySchedules(ctx context.Context, where string, args ...any) ([]domain.Schedule, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT `+scheduleColumns+` FROM schedules `+where, args...)
+	rows, err := r.conn.QueryContext(ctx, `SELECT `+scheduleColumns+` FROM schedules `+where, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query schedules: %w", err)
 	}
@@ -177,7 +231,7 @@ func (r *PostgresRepository) ListActiveSchedules(ctx context.Context) ([]domain.
 }
 
 func (r *PostgresRepository) ListScheduleItems(ctx context.Context, scheduleID string) ([]domain.ScheduleItem, error) {
-	rows, err := r.db.QueryContext(ctx, `
+	rows, err := r.conn.QueryContext(ctx, `
 		SELECT id, schedule_id, sku, quantity, created_at
 		FROM schedule_items WHERE schedule_id = $1 ORDER BY sku`, scheduleID)
 	if err != nil {
@@ -197,7 +251,7 @@ func (r *PostgresRepository) ListScheduleItems(ctx context.Context, scheduleID s
 }
 
 func (r *PostgresRepository) UpdateScheduleNextRun(ctx context.Context, scheduleID string, next *domain.Date) error {
-	res, err := r.db.ExecContext(ctx,
+	res, err := r.conn.ExecContext(ctx,
 		`UPDATE schedules SET next_run_date = $2, updated_at = now() WHERE id = $1`,
 		scheduleID, datePtr(next))
 	if err != nil {
@@ -215,7 +269,7 @@ func (r *PostgresRepository) UpdateScheduleNextRun(ctx context.Context, schedule
 // error, because the caller's correct response is to treat the occurrence as already
 // created — never to retry with a different key.
 func (r *PostgresRepository) CreateOccurrence(ctx context.Context, o domain.Occurrence) error {
-	_, err := r.db.ExecContext(ctx, `
+	_, err := r.conn.ExecContext(ctx, `
 		INSERT INTO occurrences (
 			id, schedule_id, sequence_no, scheduled_for, status, order_id, idempotency_key
 		) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
@@ -235,7 +289,7 @@ const occurrenceColumns = `id, schedule_id, sequence_no, scheduled_for, status,
 	order_id, idempotency_key, created_at, updated_at`
 
 func (r *PostgresRepository) queryOccurrences(ctx context.Context, where string, args ...any) ([]domain.Occurrence, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT `+occurrenceColumns+` FROM occurrences `+where, args...)
+	rows, err := r.conn.QueryContext(ctx, `SELECT `+occurrenceColumns+` FROM occurrences `+where, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query occurrences: %w", err)
 	}
@@ -277,7 +331,7 @@ func (r *PostgresRepository) ListPlannedOccurrences(ctx context.Context, schedul
 // The materializer uses it to decide how many more to create.
 func (r *PostgresRepository) CountFutureplannedOccurrences(ctx context.Context, scheduleID string, after domain.Date) (int, error) {
 	var n int
-	err := r.db.QueryRowContext(ctx, `
+	err := r.conn.QueryRowContext(ctx, `
 		SELECT count(*) FROM occurrences
 		WHERE schedule_id = $1 AND status = 'planned' AND scheduled_for > $2`,
 		scheduleID, after.ToTime()).Scan(&n)
@@ -290,7 +344,7 @@ func (r *PostgresRepository) CountFutureplannedOccurrences(ctx context.Context, 
 // MaxSequenceNo returns the highest sequence number used by a schedule, or 0.
 func (r *PostgresRepository) MaxSequenceNo(ctx context.Context, scheduleID string) (int, error) {
 	var n sql.NullInt64
-	err := r.db.QueryRowContext(ctx,
+	err := r.conn.QueryRowContext(ctx,
 		`SELECT max(sequence_no) FROM occurrences WHERE schedule_id = $1`, scheduleID).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("max sequence_no: %w", err)
@@ -311,7 +365,7 @@ func (r *PostgresRepository) AppendEvent(ctx context.Context, e domain.ScheduleE
 	if len(payload) == 0 {
 		payload = []byte("{}")
 	}
-	_, err := r.db.ExecContext(ctx, `
+	_, err := r.conn.ExecContext(ctx, `
 		INSERT INTO schedule_events (schedule_id, event_type, actor, reason_code, payload)
 		VALUES ($1,$2,$3,$4,$5)`,
 		e.ScheduleID, e.EventType, string(e.Actor), e.ReasonCode, payload)
@@ -322,7 +376,7 @@ func (r *PostgresRepository) AppendEvent(ctx context.Context, e domain.ScheduleE
 }
 
 func (r *PostgresRepository) ListEvents(ctx context.Context, scheduleID string) ([]domain.ScheduleEvent, error) {
-	rows, err := r.db.QueryContext(ctx, `
+	rows, err := r.conn.QueryContext(ctx, `
 		SELECT id, schedule_id, event_type, actor, reason_code, payload, created_at
 		FROM schedule_events WHERE schedule_id = $1 ORDER BY id`, scheduleID)
 	if err != nil {
@@ -363,4 +417,186 @@ func nullStr(s string) any {
 		return nil
 	}
 	return s
+}
+
+// UpdateScheduleStatus sets a schedule's status and paused_until together.
+//
+// They move in one statement because the schema ties them: the
+// schedules_paused_until_requires_paused CHECK rejects a paused_until on a schedule
+// that is not paused, so resuming or canceling must clear the date in the same UPDATE
+// that changes the status.
+func (r *PostgresRepository) UpdateScheduleStatus(ctx context.Context, scheduleID string, status domain.ScheduleStatus, pausedUntil *domain.Date) error {
+	if status != domain.SchedulePaused && pausedUntil != nil {
+		return fmt.Errorf("paused_until is only valid on a paused schedule, got status %s", status)
+	}
+	res, err := r.conn.ExecContext(ctx, `
+		UPDATE schedules SET status = $2, paused_until = $3, updated_at = now()
+		WHERE id = $1`,
+		scheduleID, string(status), datePtr(pausedUntil))
+	if err != nil {
+		return fmt.Errorf("update schedule status: %w", err)
+	}
+	return checkAffected(res)
+}
+
+// UpdateScheduleCadence sets the interval and re-anchors the schedule.
+//
+// Re-anchoring is what keeps spec §3's rule intact across a resume or a cadence
+// change: every future date is recomputed as anchor + (n × interval_days) from the new
+// anchor, so nothing accumulates from the previous cadence.
+func (r *PostgresRepository) UpdateScheduleCadence(ctx context.Context, scheduleID string, intervalDays int, anchor domain.Date) error {
+	if err := domain.ValidateInterval(intervalDays); err != nil {
+		return err
+	}
+	res, err := r.conn.ExecContext(ctx, `
+		UPDATE schedules SET interval_days = $2, anchor_date = $3, updated_at = now()
+		WHERE id = $1`,
+		scheduleID, intervalDays, anchor.ToTime())
+	if err != nil {
+		return fmt.Errorf("update schedule cadence: %w", err)
+	}
+	return checkAffected(res)
+}
+
+// UpdateOccurrenceStatus moves one occurrence to a new status.
+//
+// It refuses to touch an occurrence that already carries an order reference. Spec §3
+// says a placed order must never be rewritten, and the occurrences_order_requires_placed
+// CHECK would reject the write anyway — failing here gives the caller a usable error
+// instead of a constraint violation.
+func (r *PostgresRepository) UpdateOccurrenceStatus(ctx context.Context, occurrenceID string, status domain.OccurrenceStatus) error {
+	res, err := r.conn.ExecContext(ctx, `
+		UPDATE occurrences SET status = $2, updated_at = now()
+		WHERE id = $1 AND order_id IS NULL`,
+		occurrenceID, string(status))
+	if err != nil {
+		return fmt.Errorf("update occurrence status: %w", err)
+	}
+	return checkAffected(res)
+}
+
+// UpdateOccurrenceDate moves one occurrence to a new date — the defer action (spec §6).
+//
+// Only the occurrence moves. The schedule's anchor is untouched, which is the whole
+// point of defer: a customer who pushes one shipment out returns to their normal
+// rhythm afterward rather than permanently sliding.
+func (r *PostgresRepository) UpdateOccurrenceDate(ctx context.Context, occurrenceID string, scheduledFor domain.Date) error {
+	res, err := r.conn.ExecContext(ctx, `
+		UPDATE occurrences SET scheduled_for = $2, updated_at = now()
+		WHERE id = $1 AND status IN ('planned','pending')`,
+		occurrenceID, scheduledFor.ToTime())
+	if err != nil {
+		return fmt.Errorf("update occurrence date: %w", err)
+	}
+	return checkAffected(res)
+}
+
+// CancelUnexecutedOccurrences cancels every occurrence not yet acted on — used by
+// pause and cancel (spec §6). Placed, skipped, failed and already-canceled
+// occurrences are settled and left alone.
+func (r *PostgresRepository) CancelUnexecutedOccurrences(ctx context.Context, scheduleID string) (int, error) {
+	return r.cancelOccurrences(ctx, scheduleID, []string{"planned", "pending"})
+}
+
+// CancelPlannedOccurrences cancels only the planned ones, leaving pending untouched.
+//
+// This is the narrower sweep a cadence change needs: spec §5 says a cadence change
+// "rewrites unexecuted planned occurrences and leaves pending ones alone unless the
+// customer explicitly skips." A pending occurrence has already had its pre-billing
+// notice sent (§5 step 2), so moving it out from under the customer would contradict
+// the notice they were just given.
+func (r *PostgresRepository) CancelPlannedOccurrences(ctx context.Context, scheduleID string) (int, error) {
+	return r.cancelOccurrences(ctx, scheduleID, []string{"planned"})
+}
+
+func (r *PostgresRepository) cancelOccurrences(ctx context.Context, scheduleID string, statuses []string) (int, error) {
+	res, err := r.conn.ExecContext(ctx, `
+		UPDATE occurrences SET status = 'canceled', updated_at = now()
+		WHERE schedule_id = $1 AND status = ANY($2) AND order_id IS NULL`,
+		scheduleID, pqTextArray(statuses))
+	if err != nil {
+		return 0, fmt.Errorf("cancel occurrences: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, nil //nolint:nilerr // the update succeeded; only the count is unavailable
+	}
+	return int(n), nil
+}
+
+// NextActionableOccurrence returns the soonest occurrence a customer can still skip or
+// defer — the "next occurrence" in the spec §6 preconditions.
+//
+// Ordered by date rather than by sequence number: after a defer, the two orders can
+// disagree, and what the customer means by "next" is the one arriving soonest.
+func (r *PostgresRepository) NextActionableOccurrence(ctx context.Context, scheduleID string) (domain.Occurrence, error) {
+	return r.queryOneOccurrence(ctx, `
+		WHERE schedule_id = $1 AND status IN ('planned','pending')
+		ORDER BY scheduled_for, sequence_no LIMIT 1`, scheduleID)
+}
+
+// LastPlacedOccurrence returns the most recently placed occurrence, or ErrNotFound if
+// the schedule has never placed an order. change_cadence re-anchors to it (spec §6).
+func (r *PostgresRepository) LastPlacedOccurrence(ctx context.Context, scheduleID string) (domain.Occurrence, error) {
+	return r.queryOneOccurrence(ctx, `
+		WHERE schedule_id = $1 AND status = 'placed'
+		ORDER BY scheduled_for DESC, sequence_no DESC LIMIT 1`, scheduleID)
+}
+
+func (r *PostgresRepository) queryOneOccurrence(ctx context.Context, where string, args ...any) (domain.Occurrence, error) {
+	out, err := r.queryOccurrences(ctx, where, args...)
+	if err != nil {
+		return domain.Occurrence{}, err
+	}
+	if len(out) == 0 {
+		return domain.Occurrence{}, ErrNotFound
+	}
+	return out[0], nil
+}
+
+// LatestScheduledDate returns the furthest-out date a schedule already has an
+// unsettled occurrence on, or nil if it has none.
+//
+// The materializer uses it as the point to continue the cadence from, which is what
+// keeps it from planning a date that is already spoken for after a defer or a
+// re-anchor.
+func (r *PostgresRepository) LatestScheduledDate(ctx context.Context, scheduleID string) (*domain.Date, error) {
+	var t sql.NullTime
+	err := r.conn.QueryRowContext(ctx, `
+		SELECT max(scheduled_for) FROM occurrences
+		WHERE schedule_id = $1 AND status IN ('planned','pending')`, scheduleID).Scan(&t)
+	if err != nil {
+		return nil, fmt.Errorf("latest scheduled date: %w", err)
+	}
+	if !t.Valid {
+		return nil, nil
+	}
+	d := domain.DateOf(t.Time.UTC())
+	return &d, nil
+}
+
+// checkAffected turns "updated nothing" into ErrNotFound, so a caller acting on a row
+// that has since changed underneath it gets a clear answer rather than a silent no-op.
+func checkAffected(res sql.Result) error {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil //nolint:nilerr // the update succeeded; only the count is unavailable
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// pqTextArray renders a Go slice as a Postgres text[] literal for = ANY($n).
+//
+// The values are always in-code status constants, never user input; even so the
+// elements are quoted and escaped rather than concatenated raw, so this cannot become
+// an injection point if a caller is added later.
+func pqTextArray(values []string) string {
+	quoted := make([]string, 0, len(values))
+	for _, v := range values {
+		quoted = append(quoted, `"`+strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(v)+`"`)
+	}
+	return "{" + strings.Join(quoted, ",") + "}"
 }
