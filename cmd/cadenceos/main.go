@@ -58,11 +58,14 @@ func run() error {
 
 	srv := &http.Server{
 		Addr: fmt.Sprintf(":%d", cfg.Port),
-		Handler: httpapi.NewRouter(httpapi.HealthChecker{
-			DB:              db,
-			BuildSHA:        cfg.BuildSHA,
-			MigrationStatus: store.MigrationStatus,
-		}),
+		Handler: httpapi.NewServiceRouter(
+			httpapi.HealthChecker{
+				DB:              db,
+				BuildSHA:        cfg.BuildSHA,
+				MigrationStatus: store.MigrationStatus,
+			},
+			httpapi.ScheduleHandler{Repo: store.New(db), Now: time.Now},
+		),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
