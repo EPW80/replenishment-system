@@ -37,12 +37,15 @@ agreeing and the AI review gate loses its reference point. Every command above i
 definition of what "lint" means, not two.
 
 Supporting targets: `make security` (dependency audit), `make migrate` (apply
-migrations), `make db-up` / `make db-down` (local Postgres).
+migrations), `make materialize` (run the occurrence horizon job), `make db-up` /
+`make db-down` (local Postgres).
 
 ## Layout
 
 ```
 cmd/cadenceos/         Service entrypoint: HTTP server, graceful shutdown, /healthz
+cmd/migrate/           Applies pending migrations (deploy step and CI)
+cmd/materialize/       Nightly occurrence-horizon job (spec §5 step 1)
 internal/domain/       Entities and pure cadence math. No I/O — keeps the date
                        arithmetic testable without a database.
 internal/store/        Data access (sqlc + pgx) behind a Repository interface
@@ -51,6 +54,7 @@ internal/materialize/  Occurrence horizon job, behind a Queue interface
 internal/httpapi/      HTTP handlers and middleware
 internal/config/       Environment-driven configuration
 internal/compliance/   Forbidden-identifier guard (see below) and its test
+internal/testsupport/  Test-only database fixtures (private schema per test)
 docs/                  Lifecycle, workflow, and release-metadata documentation
 docs/adr/              Architecture decision records
 docs/replenishment-service-spec.md   The technical spec this service implements

@@ -11,7 +11,7 @@ GOVULNCHECK_VERSION ?= v1.7.0
 DATABASE_URL ?= postgres://cadenceos:cadenceos@localhost:5432/cadenceos_dev?sslmode=disable
 export DATABASE_URL
 
-.PHONY: help deps lint fmt test build run security migrate db-up db-down clean
+.PHONY: help deps lint fmt test build run security migrate materialize db-up db-down clean
 
 help: ## Show available targets
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-12s %s\n", $$1, $$2}'
@@ -51,6 +51,9 @@ security: ## Dependency vulnerability audit
 
 migrate: ## Apply pending database migrations
 	go run ./cmd/migrate
+
+materialize: ## Top up the planned-occurrence horizon for every active schedule
+	go run ./cmd/materialize
 
 db-up: ## Start the local Postgres 16 container
 	docker compose up -d db
