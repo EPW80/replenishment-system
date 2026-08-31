@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/EPW80/replenishment-system/security/advisories/new
+    about: Use private vulnerability reporting. Do not open a public issue.
+  - name: How to contribute
+    url: https://github.com/EPW80/replenishment-system/blob/main/CONTRIBUTING.md
+    about: Branch naming, commit conventions, and the review gates.
+  - name: Delivery lifecycle
+    url: https://github.com/EPW80/replenishment-system/blob/main/docs/LIFECYCLE.md
+    about: What every change passes through before production.

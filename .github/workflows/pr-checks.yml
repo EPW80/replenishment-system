@@ -1,0 +1,37 @@
+name: PR checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+# contents: read is the ceiling for everything downstream -- a called workflow can
+# narrow this token but never widen it. Kept to the single scope actions/checkout
+# needs. See docs/WORKFLOWS.md.
+permissions:
+  contents: read
+
+# Cancel superseded runs on pull requests only. Runs on the default branch each keep
+# their own pass/fail record, which is what you consult when deciding whether a SHA is
+# releasable.
+concurrency:
+  group: pr-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint.yml
+
+  test:
+    uses: ./.github/workflows/test.yml
+
+  build:
+    uses: ./.github/workflows/build.yml
+
+  security-check:
+    uses: ./.github/workflows/security-check.yml
+    # If security-check.yml adds SARIF upload, grant it here too:
+    # permissions:
+    #   contents: read
+    #   security-events: write

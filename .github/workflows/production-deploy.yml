@@ -1,0 +1,89 @@
+name: Production deploy
+
+on:
+  workflow_call:
+    inputs:
+      commit-sha:
+        description: Full 40-character commit SHA to deploy.
+        required: true
+        type: string
+      approved-sha:
+        description: >-
+          The commit_sha from the release metadata record. Read it from the record,
+          never retype it -- this check compares two values handed to the run, so it
+          cannot catch an operator who enters the same wrong SHA twice.
+        required: true
+        type: string
+      environment:
+        description: GitHub Environment name. Its required reviewers are the business-approval gate.
+        required: false
+        type: string
+        default: production
+    outputs:
+      url:
+        description: URL the deployment is serving on, for the health check.
+        value: ${{ jobs.production-deploy.outputs.url }}
+
+permissions: {}
+
+jobs:
+  production-deploy:
+    name: Production deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read   # for actions/checkout, nothing else
+      # id-token: write   # uncomment if the provider supports OIDC
+    # Binding this environment IS the business-approval gate: GitHub pauses the run
+    # before any step below executes and waits for a named reviewer to approve.
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ steps.deploy.outputs.url }}
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      # THE authoritative gate. deploy.yml's validate job only fails faster.
+      # Keep this: it is what makes an approval refer to specific bytes.
+      - name: Verify the deploy target matches the approved SHA
+        env:
+          COMMIT_SHA: ${{ inputs.commit-sha }}
+          APPROVED_SHA: ${{ inputs.approved-sha }}
+        run: |
+          if ! printf '%s' "$COMMIT_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::commit-sha must be a full 40-character lowercase hex SHA"
+            exit 1
+          fi
+          if ! printf '%s' "$APPROVED_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::approved-sha must be a full 40-character lowercase hex SHA"
+            exit 1
+          fi
+          if [ "$COMMIT_SHA" != "$APPROVED_SHA" ]; then
+            echo "::error::Refusing to deploy. commit-sha does not match the approved SHA in the release record."
+            exit 1
+          fi
+          echo "Deploy target matches the approved SHA."
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+        with:
+          ref: ${{ inputs.commit-sha }}
+          persist-credentials: false
+
+      # ------------------------------------------------------------------
+      # CUSTOMIZE: replace this step with the real deploy command.
+      #
+      # Deploy the artifact verified on staging where the platform allows it --
+      # rebuilding means production runs a build nobody tested.
+      #
+      # Must set its url output:
+      #   echo "url=https://example.com" >> "$GITHUB_OUTPUT"
+      #
+      # If the release includes a migration, it is applied here, and the record's
+      # database_migration and rollback_safe values must already reflect that.
+      #
+      # Fails on purpose -- see the note in staging-deploy.yml.
+      # ------------------------------------------------------------------
+      - name: Deploy to production
+        id: deploy
+        run: |
+          echo "::error::Production deploy is not configured. Replace this step in .github/workflows/production-deploy.yml"
+          exit 1

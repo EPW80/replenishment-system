@@ -1,0 +1,86 @@
+name: Rollback
+
+# Deliberately NOT chained into deploy.yml. Automatic rollback on a failed health
+# check sounds attractive and is often wrong: the health check cannot distinguish
+# "this release is broken" from "a dependency is briefly down," and rolling back
+# during a migration can compound the damage. A human decides.
+#
+# The workflow_dispatch trigger is the point -- this is the only lifecycle workflow a
+# human runs on its own, and without it the workflow could not be triggered at all.
+on:
+  workflow_dispatch:
+    inputs:
+      commit-sha:
+        description: Full 40-character SHA of the last known-good release.
+        required: true
+        type: string
+      rollback-safe:
+        description: >-
+          The rollback_safe value from THAT release's metadata record. Starts unticked:
+          rollback is never assumed safe until the deployment implementation
+          demonstrably supports it.
+        required: true
+        type: boolean
+        default: false
+      environment:
+        description: GitHub Environment to roll back.
+        required: false
+        type: string
+        default: production
+  workflow_call:
+    inputs:
+      commit-sha:
+        required: true
+        type: string
+      rollback-safe:
+        required: true
+        type: boolean
+      environment:
+        required: false
+        type: string
+        default: production
+
+permissions: {}
+
+jobs:
+  rollback:
+    name: Rollback
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read   # for actions/checkout, nothing else
+    environment:
+      name: ${{ inputs.environment }}
+    steps:
+      # Functional safety checks -- keep both.
+      - name: Refuse an unsafe or malformed rollback
+        env:
+          COMMIT_SHA: ${{ inputs.commit-sha }}
+          ROLLBACK_SAFE: ${{ inputs.rollback-safe }}
+        run: |
+          if ! printf '%s' "$COMMIT_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::commit-sha must be a full 40-character lowercase hex SHA"
+            exit 1
+          fi
+          if [ "$ROLLBACK_SAFE" != "true" ]; then
+            echo "::error::This release is not marked rollback_safe. Recovery is a human-planned operation, usually because of a destructive migration. Refusing to run."
+            exit 1
+          fi
+          echo "Rollback target validated."
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+        with:
+          ref: ${{ inputs.commit-sha }}
+          persist-credentials: false
+
+      # ------------------------------------------------------------------
+      # CUSTOMIZE: replace with the real rollback command.
+      #
+      # If the platform cannot roll back at all, DELETE this workflow and say so in
+      # the README. A workflow that pretends to roll back is worse than none, because
+      # people plan around it.
+      # ------------------------------------------------------------------
+      - name: Roll back
+        run: |
+          echo "::error::Rollback is not configured. Replace this step in .github/workflows/rollback.yml"
+          exit 1

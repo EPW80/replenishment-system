@@ -1,0 +1,30 @@
+name: Security check
+
+on:
+  workflow_call:
+
+permissions: {}
+# If you add SARIF upload here, security-events: write must ALSO be granted to the
+# security-check job in pr-checks.yml -- a reusable workflow can narrow the caller's
+# token but never widen it. See docs/WORKFLOWS.md.
+
+jobs:
+  security-check:
+    name: Security check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read   # for actions/checkout, nothing else
+      # security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Report Go version
+        run: go version
+
+      # Go's own vulnerability database check. No third-party action required --
+      # see docs/RECOMMENDED_ACTIONS.md, "Dependency vulnerability audit".
+      - name: Dependency vulnerability audit
+        run: make security

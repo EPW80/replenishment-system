@@ -1,0 +1,110 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit-sha:
+        description: Full 40-character commit SHA to deploy.
+        required: true
+        type: string
+      approved-sha:
+        description: >-
+          The commit_sha from the release metadata record. Read it from the record --
+          do not retype it.
+        required: true
+        type: string
+      staging-health-path:
+        description: Health endpoint path on staging.
+        required: false
+        type: string
+        default: /healthz
+      production-health-path:
+        description: Health endpoint path on production.
+        required: false
+        type: string
+        default: /healthz
+
+# contents: read is the ceiling for every called workflow -- one of them can narrow
+# this token, none can widen it. Kept to the single scope actions/checkout needs.
+permissions:
+  contents: read
+
+# Deploys queue and never cancel each other. Interrupting a deploy mid-flight can
+# leave a partially applied release, which is worse than waiting.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  # Inline pre-flight, no environment, runs first.
+  #
+  # production-deploy.yml binds the production Environment at job level, so its own
+  # approval-match check runs only AFTER a reviewer has approved -- a mismatch caught
+  # there would waste the approval rather than prevent it. This job holds no
+  # environment, so it fails in seconds instead.
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check both SHAs are full and match
+        env:
+          COMMIT_SHA: ${{ inputs.commit-sha }}
+          APPROVED_SHA: ${{ inputs.approved-sha }}
+        run: |
+          if ! printf '%s' "$COMMIT_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::commit-sha must be a full 40-character lowercase hex SHA. Branches and tags move; short SHAs can collide."
+            exit 1
+          fi
+          if ! printf '%s' "$APPROVED_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::approved-sha must be a full 40-character lowercase hex SHA"
+            exit 1
+          fi
+          if [ "$COMMIT_SHA" != "$APPROVED_SHA" ]; then
+            echo "::error::commit-sha does not match approved-sha. An approval refers to exactly one commit."
+            exit 1
+          fi
+          echo "Pre-flight passed."
+
+  staging-deploy:
+    needs: validate
+    uses: ./.github/workflows/staging-deploy.yml
+    with:
+      commit-sha: ${{ inputs.commit-sha }}
+      environment: staging
+    # No secrets: block. Deploy credentials are Environment secrets read INSIDE
+    # staging-deploy.yml by the job that binds the environment. Forwarding them from
+    # here would pass an empty string with no error -- a job calling a reusable
+    # workflow cannot declare environment:, so it cannot read environment-scoped
+    # secrets. Never secrets: inherit. See docs/WORKFLOWS.md.
+
+  staging-health-check:
+    needs: staging-deploy
+    uses: ./.github/workflows/staging-health-check.yml
+    with:
+      url: ${{ needs.staging-deploy.outputs.url }}
+      path: ${{ inputs.staging-health-path }}
+      expected-sha: ${{ inputs.commit-sha }}
+
+  # Binds the production Environment -> its required reviewers are the business
+  # approval gate. GitHub pauses here until a named reviewer approves in the UI.
+  # The run only reaches this point after a verified staging deploy, so nobody is
+  # asked to approve something untested.
+  production-deploy:
+    needs: staging-health-check
+    uses: ./.github/workflows/production-deploy.yml
+    with:
+      commit-sha: ${{ inputs.commit-sha }}
+      approved-sha: ${{ inputs.approved-sha }}
+      environment: production
+
+  production-health-check:
+    needs: production-deploy
+    uses: ./.github/workflows/production-health-check.yml
+    with:
+      url: ${{ needs.production-deploy.outputs.url }}
+      path: ${{ inputs.production-health-path }}
+      expected-sha: ${{ inputs.commit-sha }}
+    # Intentionally the last automated step. Its failure is the trigger for a rollback
+    # DECISION, not an automatic rollback -- see rollback.yml.

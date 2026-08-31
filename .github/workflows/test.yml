@@ -1,0 +1,56 @@
+name: Test
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read   # for actions/checkout, nothing else
+
+    # A service container, not a third-party action -- the image is pulled by the
+    # runner, it does not execute inside the job with the job's token.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: cadenceos
+          POSTGRES_PASSWORD: cadenceos
+          POSTGRES_DB: cadenceos_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cadenceos"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Report Go version
+        run: go version
+
+      - name: Apply migrations
+        run: make migrate
+        env:
+          DATABASE_URL: postgres://cadenceos:cadenceos@localhost:5432/cadenceos_test?sslmode=disable
+
+      # Includes the internal/compliance guard, which fails the build if an
+      # identifier implying consumption reaches a migration, model, or DTO.
+      # See docs/replenishment-service-spec.md section 2 and docs/adr/0005.
+      - name: Test
+        run: make test
+        env:
+          DATABASE_URL: postgres://cadenceos:cadenceos@localhost:5432/cadenceos_test?sslmode=disable
+
+# This workflow deliberately exposes no self-reported status output. test_status in a
+# release record is set from this check run's conclusion -- a failing job cannot be
+# trusted to report its own result. See docs/RELEASE_METADATA.md.

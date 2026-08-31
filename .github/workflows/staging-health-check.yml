@@ -1,0 +1,93 @@
+name: Staging health check
+
+on:
+  workflow_call:
+    inputs:
+      url:
+        description: Base URL the deploy reported.
+        required: true
+        type: string
+      path:
+        description: Health endpoint path.
+        required: false
+        type: string
+        default: /healthz
+      expected-sha:
+        description: >-
+          Full commit SHA the deployment should report. When set, the probe asserts the
+          endpoint reports THIS commit -- which catches a deploy that silently kept
+          serving the previous version, the failure a plain 200 cannot see.
+        required: false
+        type: string
+        default: ''
+      attempts:
+        description: How many times to probe before giving up.
+        required: false
+        type: number
+        default: 10
+      delay-seconds:
+        description: Seconds between attempts. Tune to the deploy's warm-up time.
+        required: false
+        type: number
+        default: 15
+
+permissions: {}
+
+jobs:
+  health-check:
+    name: Staging health check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # No checkout, so no token at all.
+    permissions: {}
+    steps:
+      # Values reach the shell through env, never interpolated into the run: script --
+      # interpolation happens before the shell sees the line, so a crafted value could
+      # otherwise inject a command. See docs/WORKFLOWS.md.
+      - name: Probe staging health endpoint
+        env:
+          BASE_URL: ${{ inputs.url }}
+          HEALTH_PATH: ${{ inputs.path }}
+          EXPECTED_SHA: ${{ inputs.expected-sha }}
+          ATTEMPTS: ${{ inputs.attempts }}
+          DELAY_SECONDS: ${{ inputs.delay-seconds }}
+        run: |
+          set -u
+          if [ -z "$BASE_URL" ]; then
+            echo "::error::No URL provided. The deploy step must set its url output."
+            exit 1
+          fi
+          TARGET="${BASE_URL%/}${HEALTH_PATH}"
+          echo "Probing $TARGET ($ATTEMPTS attempts, ${DELAY_SECONDS}s apart)"
+
+          i=1
+          while [ "$i" -le "$ATTEMPTS" ]; do
+            BODY_FILE="$(mktemp)"
+            CODE="$(curl -sS -o "$BODY_FILE" -w '%{http_code}' --max-time 15 "$TARGET" || echo 000)"
+
+            if [ "$CODE" = "200" ]; then
+              if [ -z "$EXPECTED_SHA" ]; then
+                echo "Attempt $i: 200 OK"
+                cat "$BODY_FILE"
+                exit 0
+              fi
+              if grep -qF "$EXPECTED_SHA" "$BODY_FILE"; then
+                echo "Attempt $i: 200 OK, and the deployment reports the expected commit."
+                cat "$BODY_FILE"
+                exit 0
+              fi
+              # 200 but serving the wrong version. Do not keep retrying -- retrying
+              # cannot change which commit is deployed, and a pass here would report a
+              # release that never shipped.
+              echo "::error::Health endpoint returned 200 but does not report $EXPECTED_SHA. The deploy likely did not replace the running version."
+              cat "$BODY_FILE"
+              exit 1
+            fi
+
+            echo "Attempt $i/$ATTEMPTS: HTTP $CODE, retrying in ${DELAY_SECONDS}s"
+            i=$((i + 1))
+            [ "$i" -le "$ATTEMPTS" ] && sleep "$DELAY_SECONDS"
+          done
+
+          echo "::error::Health check failed after $ATTEMPTS attempts against $TARGET"
+          exit 1
