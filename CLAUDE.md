@@ -38,7 +38,8 @@ definition of what "lint" means, not two.
 
 Supporting targets: `make security` (dependency audit), `make migrate` (apply
 migrations), `make materialize` (run the occurrence horizon job), `make db-up` /
-`make db-down` (local Postgres).
+`make db-down` (local Postgres). `cmd/export` (read-model CSV export) takes required
+flags and has no fixed-argument `make` target — run it directly, see its `-h`.
 
 ## Layout
 
@@ -46,12 +47,21 @@ migrations), `make materialize` (run the occurrence horizon job), `make db-up` /
 cmd/cadenceos/         Service entrypoint: HTTP server, graceful shutdown, /healthz
 cmd/migrate/           Applies pending migrations (deploy step and CI)
 cmd/materialize/       Nightly occurrence-horizon job (spec §5 step 1)
-internal/domain/       Entities and pure cadence math. No I/O — keeps the date
-                       arithmetic testable without a database.
+cmd/export/            Read-model CSV export (spec §8), no HTTP/auth — see
+                       internal/readmodel and docs/adr/0006
+internal/domain/       Entities, pure cadence math, and the spec §6 state-transition
+                       preconditions. No I/O — keeps the date arithmetic and
+                       transition rules testable without a database.
 internal/store/        Data access (sqlc + pgx) behind a Repository interface
-internal/store/migrations/   goose SQL migrations
+internal/store/migrations/   goose SQL migrations, including the read-model views
 internal/materialize/  Occurrence horizon job, behind a Queue interface
-internal/httpapi/      HTTP handlers and middleware
+internal/schedule/      Spec §6 state-machine service: pause, resume, skip_next,
+                        defer, change_cadence, cancel. Property-based tests over
+                        transition sequences.
+internal/readmodel/    Spec §8 read models — cadence distribution, churn reasons,
+                       occurrence forecast, audience segments, cohort retention —
+                       queried from views, never the write tables directly
+internal/httpapi/      HTTP handlers and middleware (schedules, transitions, health)
 internal/config/       Environment-driven configuration
 internal/compliance/   Forbidden-identifier guard (see below) and its test
 internal/testsupport/  Test-only database fixtures (private schema per test)
