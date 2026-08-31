@@ -1,17 +1,11 @@
 # Security Policy
 
-> **CUSTOMIZE:** replace the reporting contact and the supported-versions table
-> before this repository is used.
-
 ## Reporting a vulnerability
 
 Do **not** open a public issue for a security vulnerability.
 
-<!-- CUSTOMIZE — pick one and delete the other -->
-- Use GitHub's private vulnerability reporting: **Security → Advisories → Report
-  a vulnerability** on this repository. (Requires enabling private reporting in
-  repository settings.)
-- Or email: _security-contact@example.com_
+Use GitHub's private vulnerability reporting: **Security → Advisories → Report a
+vulnerability** on this repository. Reports stay private until a fix is available.
 
 Include, as far as you can:
 
@@ -22,31 +16,57 @@ Include, as far as you can:
 
 ### What to expect
 
-<!-- CUSTOMIZE — commit to timelines you can actually meet -->
 | Stage | Target |
 | --- | --- |
-| Acknowledgement | _within N business days_ |
-| Initial assessment | _within N business days_ |
-| Fix or mitigation plan | _communicated after assessment_ |
+| Acknowledgement | within 3 business days |
+| Initial assessment | within 10 business days |
+| Fix or mitigation plan | communicated after assessment |
 
 We will keep you informed while the issue is open and credit you in the advisory
 unless you ask us not to.
 
 ## Supported versions
 
-<!-- CUSTOMIZE -->
+CadenceOS is a continuously deployed service, not a versioned distribution. There are
+no release branches and no backports.
+
 | Version | Supported |
 | --- | --- |
-| _fill in_ | _yes / no_ |
+| The currently deployed production release | Yes |
+| Any earlier commit | No — report against the current deployment |
 
 ## Scope
 
-<!-- CUSTOMIZE -->
-_Name the deployed hosts, domains, and repositories in scope, and anything
-explicitly out of scope (third-party services, staging data, etc.)._
+**In scope:**
 
-Do not test against production. Do not run denial-of-service tests, and do not
-access data belonging to anyone other than yourself.
+- This repository and the CadenceOS service it deploys.
+- The CadenceOS staging and production deployments.
+- The customer-facing replenishment portal widget and the WordPress mu-plugin that
+  proxies authenticated calls to it.
+
+**Out of scope:**
+
+- WordPress core, WooCommerce, and third-party plugins — report those upstream.
+- Postmark, the payment gateway, and other third-party services — report those to the
+  vendor.
+- Findings that require a compromised customer account or physical device access.
+
+Do not test against production. Do not run denial-of-service tests, and do not access
+data belonging to anyone other than yourself.
+
+### Areas worth a reporter's attention
+
+These are the trust boundaries this service actually has:
+
+- **Payment token handling.** `payment_token_ref` is an opaque gateway vault
+  reference. Card data never enters this system; a report showing otherwise is a
+  serious finding.
+- **Order idempotency.** `occurrences.idempotency_key` is what prevents a retry, a
+  duplicate queue delivery, or a mid-run redeploy from producing a second charge. A
+  path to a duplicate charge is a serious finding.
+- **The nonce-to-JWT exchange** in the WordPress mu-plugin — the only authentication
+  boundary between the storefront and this service.
+- **Cross-customer access** to schedules, occurrences, or order references.
 
 ---
 

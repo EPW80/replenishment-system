@@ -97,5 +97,32 @@ PR title.
 
 ## Local setup
 
-<!-- CUSTOMIZE — fill in once the stack is chosen -->
-_Prerequisites, install command, how to run tests, how to run the app locally._
+**Prerequisites:** Go (the version in `go.mod`'s `toolchain` directive; the `go`
+command downloads it automatically), Docker with Compose for the local database, and
+`make`.
+
+```sh
+make deps      # install tool dependencies (staticcheck, goose, sqlc, govulncheck)
+make db-up     # start local Postgres 16
+make migrate   # apply migrations
+make run       # start the service on :8080
+```
+
+Verify it is up:
+
+```sh
+curl localhost:8080/healthz
+```
+
+**Before opening a PR**, run what CI runs — the workflows call these same targets, so
+a clean run here is a clean run there:
+
+```sh
+make lint test build security
+```
+
+`make test` needs the database running. It also runs the compliance guard in
+`internal/compliance`, which fails the build if an identifier implying consumption
+(`doses_per_day` and relatives) appears in a migration, model, or DTO. If it fires,
+the fix is to rename the field, never to weaken the guard — see the Compliance
+boundary section of [`CLAUDE.md`](CLAUDE.md).

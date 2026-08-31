@@ -2,38 +2,96 @@
 
 Guidance for Claude Code working in this repository.
 
-> **CUSTOMIZE:** every section marked `CUSTOMIZE` below is a placeholder. Fill it
-> in when you start the project. Leave the lifecycle rules as they are.
-
 ---
 
 ## Project
 
-<!-- CUSTOMIZE -->
-- **What this is:** _one sentence._
-- **Stack:** _language, framework, package manager, runtime version._
-- **Hosting:** _where staging and production run._
-- **Owner:** _team or person._
+- **What this is:** CadenceOS — a standalone scheduling service that turns one-time
+  WooCommerce purchases into recurring orders on a customer-controlled cadence, with
+  pause, skip, defer, and cadence-change built in.
+- **Stack:** Go (toolchain pinned in `go.mod`), PostgreSQL 16, `river` for the durable
+  queue, `goose` for migrations, `sqlc` + `pgx` for data access. Postmark for
+  transactional email. No framework.
+- **Hosting:** Hetzner via Coolify, alongside PartnerOS. Staging and production are
+  separate GitHub Environments; deploy credentials are Environment-scoped secrets.
+- **Owner:** Erik Williams.
+
+The service owns schedules. WooCommerce owns catalog, checkout, payment, and
+fulfillment. That split is deliberate — it is what lets the same service deploy behind
+a second brand as a configuration change. See `docs/replenishment-service-spec.md` §1
+and §12.
 
 ## Commands
 
-<!-- CUSTOMIZE — these must match the commands in .github/workflows/ -->
 | Task | Command |
 | --- | --- |
-| Install | _fill in_ |
-| Lint | _fill in_ |
-| Test | _fill in_ |
-| Build | _fill in_ |
-| Run locally | _fill in_ |
+| Install | `make deps` |
+| Lint | `make lint` |
+| Test | `make test` |
+| Build | `make build` |
+| Run locally | `make run` |
 
 Keep this table and the workflows in sync. If they drift, CI and local runs stop
-agreeing and the AI review gate loses its reference point.
+agreeing and the AI review gate loses its reference point. Every command above is a
+`Makefile` target, and the workflows call the same targets — so there is one
+definition of what "lint" means, not two.
+
+Supporting targets: `make security` (dependency audit), `make migrate` (apply
+migrations), `make db-up` / `make db-down` (local Postgres).
 
 ## Layout
 
-<!-- CUSTOMIZE -->
-_Describe the source layout once it exists: where application code lives, where
-tests live, where configuration lives._
+```
+cmd/cadenceos/         Service entrypoint: HTTP server, graceful shutdown, /healthz
+internal/domain/       Entities and pure cadence math. No I/O — keeps the date
+                       arithmetic testable without a database.
+internal/store/        Data access (sqlc + pgx) behind a Repository interface
+internal/store/migrations/   goose SQL migrations
+internal/materialize/  Occurrence horizon job, behind a Queue interface
+internal/httpapi/      HTTP handlers and middleware
+internal/config/       Environment-driven configuration
+internal/compliance/   Forbidden-identifier guard (see below) and its test
+docs/                  Lifecycle, workflow, and release-metadata documentation
+docs/adr/              Architecture decision records
+docs/replenishment-service-spec.md   The technical spec this service implements
+releases/              Append-only release metadata records
+```
+
+Third-party choices (`river`, `goose`, `sqlc`) each sit behind a narrow interface, so
+replacing one is an adapter swap rather than a rewrite. The spec directs reuse of
+PartnerOS's queue and REST scaffolding; where that was not reachable, the ADRs in
+`docs/adr/` record what was chosen instead and why.
+
+---
+
+## Compliance boundary
+
+**Read this before designing any schema, endpoint, email, or UI string.** It is a hard
+constraint from `docs/replenishment-service-spec.md` §2, not a preference.
+
+The service stores `interval_days` and nothing that implies consumption. It must never
+store, compute, infer, or display:
+
+- units-per-day, servings-per-day, or any usage rate
+- doses remaining, "you have 4 days left," or supply-depletion projections
+- adherence streaks, missed-dose reminders, or intake logging
+- outcome tracking, symptom logs, or goal progress
+- any per-compound cadence *recommendation*, whether authored or model-generated
+
+A default cadence per SKU is fine — it is a merchandising decision derived from pack
+size and observed reorder behavior, and it must be documented as such in the SKU
+config, in those words.
+
+**Copy rule for every surface: "when to reorder," never "when to take."** This applies
+to response fields, error strings, email templates, and portal copy alike.
+
+The instant a field named `doses_per_day` appears in a migration, this stops being a
+commerce tool and becomes a treatment app: FTC/FDA exposure, processor risk, and a
+materially different insurance conversation.
+
+This is enforced mechanically by `internal/compliance`, which fails the build on a
+forbidden identifier and runs as part of `make test`. Do not weaken that guard to make
+a change pass — extend the change instead. Reject any PR that adds such a column.
 
 ---
 
@@ -69,6 +127,19 @@ Any change that adds, alters, or drops schema must:
 
 A destructive migration makes a release non-rollback-safe. Say so explicitly
 rather than leaving it implied.
+
+Two invariants this schema depends on, both from spec §3:
+
+- **`occurrences.idempotency_key` is `UNIQUE`.** It is `schedule_id:sequence_no`, and
+  it is the whole safety story for order creation — a retry, a duplicate queue
+  delivery, or a redeploy mid-run must never produce a second charge. Never drop or
+  weaken that constraint.
+- **`next_run_date` is always recomputed as `anchor_date + (n × interval_days)`**,
+  never as `last_run + interval`. Incremental addition accumulates drift across skips,
+  deferrals, and retries; anchor-relative computation does not.
+
+`payment_token_ref` holds an opaque gateway vault reference. Card data never enters
+this system.
 
 ## Review gates
 
