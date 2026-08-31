@@ -1,0 +1,40 @@
+# CODEOWNERS — example
+#
+# Rename to .github/CODEOWNERS and replace every placeholder before use.
+# This file is what implements the peer-approval gate: with "Require review from
+# Code Owners" enabled in branch protection, GitHub will not let a PR merge
+# without an approval from an owner listed here.
+#
+# Syntax: <path pattern>  <owner> [<owner> ...]
+# Owners are @username or @org/team-name. Teams must have write access to the
+# repository or the rule is silently ignored.
+# Last matching rule wins, so order matters — put the broad default first.
+
+# ── Default owner for everything ────────────────────────────────────────────
+*                           @ORG/REPLACE-ME-TEAM
+
+# ── CI/CD and repository configuration ──────────────────────────────────────
+# Workflow changes alter what runs with the repository's token. Restrict these
+# to the people who own delivery and security.
+/.github/                   @ORG/REPLACE-ME-PLATFORM-TEAM
+/.github/workflows/         @ORG/REPLACE-ME-PLATFORM-TEAM
+/.github/CODEOWNERS         @ORG/REPLACE-ME-PLATFORM-TEAM
+
+# ── Security-relevant documents ─────────────────────────────────────────────
+/SECURITY.md                @ORG/REPLACE-ME-SECURITY-TEAM
+
+# ── Release metadata and its schema ─────────────────────────────────────────
+# Records are append-only; the schema defines what an approval means.
+/docs/schemas/              @ORG/REPLACE-ME-PLATFORM-TEAM
+/releases/                  @ORG/REPLACE-ME-PLATFORM-TEAM
+
+# ── AI review configuration ─────────────────────────────────────────────────
+/.claude/                   @ORG/REPLACE-ME-PLATFORM-TEAM
+
+# ── Documentation ───────────────────────────────────────────────────────────
+/docs/                      @ORG/REPLACE-ME-TEAM
+
+# ── Application code (CUSTOMIZE) ────────────────────────────────────────────
+# Add per-area owners once the source layout exists, most specific last. E.g.:
+# /src/billing/             @ORG/REPLACE-ME-BILLING-TEAM
+# /infra/                   @ORG/REPLACE-ME-PLATFORM-TEAM

@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/project-helix/release-metadata.schema.json",
+  "title": "Project Helix release metadata",
+  "description": "A write-once record of one release candidate and the review gates it passed. Identified by commit_sha, which is immutable: an approval recorded against a SHA always refers to the exact version of the code that was reviewed. See docs/RELEASE_METADATA.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "project",
+    "repository",
+    "pull_request",
+    "commit_sha",
+    "developer",
+    "human_reviewer",
+    "test_status",
+    "security_review_status",
+    "staging_url",
+    "business_approval_required",
+    "rollback_safe",
+    "database_migration",
+    "created_at"
+  ],
+  "properties": {
+    "project": {
+      "description": "Human-readable project name.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "repository": {
+      "description": "GitHub repository as owner/repo.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?/[A-Za-z0-9._-]+$"
+    },
+    "pull_request": {
+      "description": "Number of the pull request that introduced this commit.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "commit_sha": {
+      "description": "Full 40-character lowercase hex SHA of the reviewed commit. IMMUTABLE: this field identifies the record and must never be changed after the record is written. A short SHA, branch name, or tag is not acceptable, because those can resolve to different code over time.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "developer": {
+      "description": "GitHub login of the author of the change.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$"
+    },
+    "human_reviewer": {
+      "description": "GitHub login of the human who approved the pull request. Must differ from developer: self-review does not satisfy the peer-approval gate.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$"
+    },
+    "test_status": {
+      "description": "Conclusion of the automated test gate for this commit. Set from the check-run conclusion, never asserted by hand.",
+      "type": "string",
+      "enum": ["passed", "failed", "pending"]
+    },
+    "security_review_status": {
+      "description": "Outcome of the security gate: the security-check workflow together with the AI security review. When set to 'waived', this schema additionally requires waiver_authorized_by, waiver_reason and waiver_timestamp, so a waiver can never be recorded anonymously or without a reason.",
+      "type": "string",
+      "enum": ["passed", "failed", "pending", "waived"]
+    },
+    "staging_url": {
+      "description": "Base URL where this commit was deployed and verified on staging. Null only if it has not been deployed to staging yet; a release promoted to production with a null staging_url was never verified.",
+      "type": ["string", "null"],
+      "format": "uri",
+      "pattern": "^https?://"
+    },
+    "business_approval_required": {
+      "description": "Whether this release requires executive/business sign-off before production, beyond technical peer approval. Enforced operationally by the required-reviewer rule on the production GitHub Environment, not by this field.",
+      "type": "boolean"
+    },
+    "rollback_safe": {
+      "description": "Whether the previously deployed version can be redeployed over this release without data loss or breakage. Defaults to false: rollback is never assumed safe until a project's actual deployment implementation demonstrably supports it. Must be false for destructive or non-backward-compatible migrations and one-way data backfills. The rollback workflow refuses to run when this is false.",
+      "type": "boolean",
+      "default": false
+    },
+    "database_migration": {
+      "description": "Whether this release adds, alters, or drops database schema, or backfills data.",
+      "type": "boolean",
+      "default": false
+    },
+    "created_at": {
+      "description": "RFC 3339 timestamp of when this record was written. Records the moment of the release decision, not the commit date. The pattern is enforced alongside 'format' on purpose: most validators treat 'format' as an annotation only unless an optional library is installed, so 'format' alone would accept arbitrary text here.",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+    },
+    "waiver_authorized_by": {
+      "description": "GitHub login of the Technical Admin who authorized the security-review waiver. Required only when security_review_status is 'waived', and forbidden otherwise. ONLY a Technical Admin may authorize a waiver; this schema records who did, but cannot verify that they hold that role — see docs/RELEASE_METADATA.md.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$"
+    },
+    "waiver_reason": {
+      "description": "Why the security gate was waived for this release, and what compensating control applies. Required only when security_review_status is 'waived', and forbidden otherwise. The minimum length exists to reject placeholders like 'n/a' or 'ok', which defeat the purpose of an auditable waiver.",
+      "type": "string",
+      "minLength": 20,
+      "maxLength": 2000
+    },
+    "waiver_timestamp": {
+      "description": "RFC 3339 timestamp of when the waiver was authorized. Required only when security_review_status is 'waived', and forbidden otherwise. Recorded separately from created_at so the audit trail shows when the exception was granted, which may precede the release record.",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+    }
+  },
+  "if": {
+    "properties": { "security_review_status": { "const": "waived" } },
+    "required": ["security_review_status"]
+  },
+  "then": {
+    "$comment": "A waiver must be attributable, justified and timed.",
+    "required": ["waiver_authorized_by", "waiver_reason", "waiver_timestamp"]
+  },
+  "else": {
+    "$comment": "Waiver fields are meaningless without a waiver, and their presence alongside 'passed' would misrepresent the record. Forbid rather than ignore.",
+    "allOf": [
+      { "not": { "required": ["waiver_authorized_by"] } },
+      { "not": { "required": ["waiver_reason"] } },
+      { "not": { "required": ["waiver_timestamp"] } }
+    ]
+  },
+  "$comment": "Three rules cannot be expressed in JSON Schema and are enforced by review instead (see .claude/agents/release-auditor.md): human_reviewer must differ from developer; rollback_safe must be false for a destructive migration; and waiver_authorized_by must actually hold the Technical Admin role.",
+  "examples": [
+    {
+      "project": "Example Service",
+      "repository": "example-org/example-service",
+      "pull_request": 142,
+      "commit_sha": "3f7a1c9e5b2d8a4f6e0c1b3d5a7f9e2c4b6d8a0f",
+      "developer": "dev-login",
+      "human_reviewer": "reviewer-login",
+      "test_status": "passed",
+      "security_review_status": "passed",
+      "staging_url": "https://staging.example.com",
+      "business_approval_required": true,
+      "rollback_safe": false,
+      "database_migration": true,
+      "created_at": "2026-08-10T14:32:00Z"
+    },
+    {
+      "project": "Example Service",
+      "repository": "example-org/example-service",
+      "pull_request": 143,
+      "commit_sha": "8b2e4d6a0c9f1e3b5d7a9c1e3f5b7d9a1c3e5f70",
+      "developer": "dev-login",
+      "human_reviewer": "reviewer-login",
+      "test_status": "passed",
+      "security_review_status": "waived",
+      "staging_url": "https://staging.example.com",
+      "business_approval_required": true,
+      "rollback_safe": false,
+      "database_migration": false,
+      "created_at": "2026-08-11T09:05:00Z",
+      "waiver_authorized_by": "tech-admin-login",
+      "waiver_reason": "Upstream advisory affects a dev-only dependency not present in the production build; tracked in issue #218.",
+      "waiver_timestamp": "2026-08-11T08:51:00Z"
+    }
+  ]
+}

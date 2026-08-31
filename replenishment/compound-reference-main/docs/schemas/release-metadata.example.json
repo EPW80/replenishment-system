@@ -1,0 +1,15 @@
+{
+  "project": "Example Service",
+  "repository": "example-org/example-service",
+  "pull_request": 142,
+  "commit_sha": "3f7a1c9e5b2d8a4f6e0c1b3d5a7f9e2c4b6d8a0f",
+  "developer": "dev-login",
+  "human_reviewer": "reviewer-login",
+  "test_status": "passed",
+  "security_review_status": "passed",
+  "staging_url": "https://staging.example.com",
+  "business_approval_required": true,
+  "rollback_safe": false,
+  "database_migration": true,
+  "created_at": "2026-08-10T14:32:00Z"
+}
