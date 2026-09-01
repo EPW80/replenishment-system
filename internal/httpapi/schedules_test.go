@@ -50,6 +50,7 @@ func TestCreateAndGetSchedule(t *testing.T) {
 
 	body := `{
 		"customer_id": "` + customer + `",
+		"customer_email": "` + customer + `@example.com",
 		"interval_days": 30,
 		"anchor_date": "2026-01-01",
 		"timezone": "America/Los_Angeles",
@@ -83,6 +84,10 @@ func TestCreateAndGetSchedule(t *testing.T) {
 	if strings.Contains(rec.Body.String(), "tok_abc123") {
 		t.Error("payment_token_ref leaked into the response")
 	}
+	// Same for the email address — write-only, like the vault reference.
+	if strings.Contains(rec.Body.String(), customer+"@example.com") {
+		t.Error("customer_email leaked into the response")
+	}
 
 	get := do(t, h, http.MethodGet, "/schedules/"+id, "")
 	if get.Code != http.StatusOK {
@@ -99,11 +104,12 @@ func TestCreateScheduleValidation(t *testing.T) {
 	h, _, _ := newAPI(t)
 
 	valid := map[string]any{
-		"customer_id":   "cust_1",
-		"interval_days": 30,
-		"anchor_date":   "2026-01-01",
-		"timezone":      "UTC",
-		"items":         []map[string]any{{"sku": "SKU-001", "quantity": 1}},
+		"customer_id":    "cust_1",
+		"customer_email": "cust_1@example.com",
+		"interval_days":  30,
+		"anchor_date":    "2026-01-01",
+		"timezone":       "UTC",
+		"items":          []map[string]any{{"sku": "SKU-001", "quantity": 1}},
 	}
 
 	for _, tc := range []struct {
@@ -111,6 +117,11 @@ func TestCreateScheduleValidation(t *testing.T) {
 		patch func(map[string]any)
 	}{
 		{"missing customer_id", func(m map[string]any) { delete(m, "customer_id") }},
+		{"missing customer_email", func(m map[string]any) { delete(m, "customer_email") }},
+		{"malformed customer_email", func(m map[string]any) { m["customer_email"] = "not-an-email" }},
+		{"multiple addresses in customer_email are rejected", func(m map[string]any) {
+			m["customer_email"] = "Name <cust_1@example.com>, second@example.com"
+		}},
 		{"interval below spec minimum", func(m map[string]any) { m["interval_days"] = 6 }},
 		{"interval above spec maximum", func(m map[string]any) { m["interval_days"] = 181 }},
 		{"malformed anchor_date", func(m map[string]any) { m["anchor_date"] = "01/01/2026" }},
@@ -172,7 +183,7 @@ func TestUpcomingQueueCarriesNoConsumptionFields(t *testing.T) {
 	h, _, _ := newAPI(t)
 	customer := "cust_" + uuid.NewString()[:8]
 
-	body := `{"customer_id":"` + customer + `","interval_days":30,"anchor_date":"2026-01-01",
+	body := `{"customer_id":"` + customer + `","customer_email":"` + customer + `@example.com","interval_days":30,"anchor_date":"2026-01-01",
 		"timezone":"UTC","items":[{"sku":"SKU-001","quantity":1}]}`
 	rec := do(t, h, http.MethodPost, "/schedules", body)
 	if rec.Code != http.StatusCreated {
@@ -204,7 +215,7 @@ func TestListSchedulesByCustomer(t *testing.T) {
 	customer := "cust_" + uuid.NewString()[:8]
 
 	for _, sku := range []string{"SKU-001", "SKU-002"} {
-		body := `{"customer_id":"` + customer + `","interval_days":30,"anchor_date":"2026-01-01",
+		body := `{"customer_id":"` + customer + `","customer_email":"` + customer + `@example.com","interval_days":30,"anchor_date":"2026-01-01",
 			"timezone":"UTC","items":[{"sku":"` + sku + `","quantity":1}]}`
 		if rec := do(t, h, http.MethodPost, "/schedules", body); rec.Code != http.StatusCreated {
 			t.Fatalf("create %s: %s", sku, rec.Body.String())

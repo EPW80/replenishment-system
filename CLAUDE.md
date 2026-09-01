@@ -37,9 +37,10 @@ agreeing and the AI review gate loses its reference point. Every command above i
 definition of what "lint" means, not two.
 
 Supporting targets: `make security` (dependency audit), `make migrate` (apply
-migrations), `make materialize` (run the occurrence horizon job), `make db-up` /
-`make db-down` (local Postgres). `cmd/export` (read-model CSV export) takes required
-flags and has no fixed-argument `make` target — run it directly, see its `-h`.
+migrations), `make materialize` (run the occurrence horizon job), `make notify` (run
+one lifecycle-email dispatch pass), `make db-up` / `make db-down` (local Postgres).
+`cmd/export` (read-model CSV export) takes required flags and has no fixed-argument
+`make` target — run it directly, see its `-h`.
 
 ## Layout
 
@@ -49,6 +50,8 @@ cmd/migrate/           Applies pending migrations (deploy step and CI)
 cmd/materialize/       Nightly occurrence-horizon job (spec §5 step 1)
 cmd/export/            Read-model CSV export (spec §8), no HTTP/auth — see
                        internal/readmodel and docs/adr/0006
+cmd/notify/            Lifecycle-email dispatch pass (spec §7, partial) — see
+                       internal/notify and docs/adr/0007
 internal/domain/       Entities, pure cadence math, and the spec §6 state-transition
                        preconditions. No I/O — keeps the date arithmetic and
                        transition rules testable without a database.
@@ -61,6 +64,8 @@ internal/schedule/      Spec §6 state-machine service: pause, resume, skip_next
 internal/readmodel/    Spec §8 read models — cadence distribution, churn reasons,
                        occurrence forecast, audience segments, cohort retention —
                        queried from views, never the write tables directly
+internal/notify/       Spec §7 lifecycle email (partial) — Postmark client, templates,
+                       and a transactional-outbox dispatcher off schedule_events
 internal/httpapi/      HTTP handlers and middleware (schedules, transitions, health)
 internal/config/       Environment-driven configuration
 internal/compliance/   Forbidden-identifier guard (see below) and its test

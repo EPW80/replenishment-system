@@ -28,6 +28,16 @@ type Config struct {
 	// MaterializeHorizon is how many future planned occurrences to keep per active
 	// schedule. Spec §5 default is 3.
 	MaterializeHorizon int
+
+	// PostmarkServerToken, EmailFromAddress and EmailSupportAddress configure
+	// internal/notify (Phase 4). Only cmd/notify needs these, so Load does not
+	// require them — a service or job that never sends email should not have to
+	// set Postmark credentials to start. cmd/notify validates them itself, the
+	// same way cmd/migrate validates DATABASE_URL itself rather than through this
+	// shared loader.
+	PostmarkServerToken string
+	EmailFromAddress    string
+	EmailSupportAddress string
 }
 
 // Load reads configuration from the environment, applying defaults.
@@ -37,10 +47,13 @@ type Config struct {
 // refuses to start.
 func Load() (Config, error) {
 	c := Config{
-		DatabaseURL:        os.Getenv("DATABASE_URL"),
-		Port:               8080,
-		BuildSHA:           envOr("BUILD_SHA", "unknown"),
-		MaterializeHorizon: 3,
+		DatabaseURL:         os.Getenv("DATABASE_URL"),
+		Port:                8080,
+		BuildSHA:            envOr("BUILD_SHA", "unknown"),
+		MaterializeHorizon:  3,
+		PostmarkServerToken: os.Getenv("POSTMARK_SERVER_TOKEN"),
+		EmailFromAddress:    os.Getenv("EMAIL_FROM_ADDRESS"),
+		EmailSupportAddress: os.Getenv("EMAIL_SUPPORT_ADDRESS"),
 	}
 
 	if c.DatabaseURL == "" {

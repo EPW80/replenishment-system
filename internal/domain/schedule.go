@@ -43,7 +43,13 @@ const (
 type Schedule struct {
 	ID         string
 	CustomerID string // WooCommerce customer ID
-	Status     ScheduleStatus
+
+	// CustomerEmail is the address lifecycle notifications go to (spec §2 scope:
+	// "Lifecycle email via Postmark" is this service's job, not WooCommerce's).
+	// A normalized single address — see net/mail.ParseAddress at the point this is
+	// validated, internal/httpapi/schedules.go.
+	CustomerEmail string
+	Status        ScheduleStatus
 
 	IntervalDays int
 

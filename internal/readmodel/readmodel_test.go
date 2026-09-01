@@ -28,9 +28,9 @@ func setup(t *testing.T) (*sql.DB, *readmodel.PostgresReadModel) {
 func insertSchedule(t *testing.T, db *sql.DB, id, customerID, status string, intervalDays int, createdAt time.Time) {
 	t.Helper()
 	_, err := db.ExecContext(context.Background(), `
-		INSERT INTO schedules (id, customer_id, status, interval_days, anchor_date, timezone, created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,'UTC',$6,$6)`,
-		id, customerID, status, intervalDays, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), createdAt)
+		INSERT INTO schedules (id, customer_id, customer_email, status, interval_days, anchor_date, timezone, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,'UTC',$7,$7)`,
+		id, customerID, customerID+"@example.com", status, intervalDays, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), createdAt)
 	if err != nil {
 		t.Fatalf("insert schedule: %v", err)
 	}

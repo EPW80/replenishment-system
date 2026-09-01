@@ -15,6 +15,7 @@ costs), and Status.
 | [0004](0004-anchor-relative-date-math.md) | Compute `next_run_date` anchor-relative, never incrementally | Accepted |
 | [0005](0005-compliance-boundary-enforcement.md) | Enforce the §2 compliance boundary with a build-failing guard | Accepted |
 | [0006](0006-read-models-scoped-to-available-data.md) | Read models report counts, not revenue or acquisition source — the schema doesn't have that data yet | Accepted |
+| [0007](0007-postmark-http-client-and-outbox-dispatch.md) | Postmark over hand-rolled `net/http`; an outbox dispatcher off `schedule_events`, not synchronous sends inside transitions | Accepted |
 
 **"Provisional"** marks a decision taken without access to PartnerOS. The spec (§4)
 directs reuse of whatever PartnerOS settled on rather than introducing a second

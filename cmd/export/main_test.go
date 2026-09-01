@@ -105,9 +105,9 @@ func seedSchedule(t *testing.T, db *sql.DB, sku string, intervalDays int, status
 	t.Helper()
 	id := uuid.NewString()
 	if _, err := db.ExecContext(context.Background(), `
-		INSERT INTO schedules (id, customer_id, status, interval_days, anchor_date, timezone)
-		VALUES ($1,$2,$3,$4,$5,'UTC')`,
-		id, "cust_"+uuid.NewString()[:8], status, intervalDays, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)); err != nil {
+		INSERT INTO schedules (id, customer_id, customer_email, status, interval_days, anchor_date, timezone)
+		VALUES ($1,$2,$3,$4,$5,$6,'UTC')`,
+		id, "cust_"+uuid.NewString()[:8], "cust@example.com", status, intervalDays, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatalf("seed schedule: %v", err)
 	}
 	if _, err := db.ExecContext(context.Background(),

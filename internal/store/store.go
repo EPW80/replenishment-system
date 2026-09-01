@@ -28,6 +28,12 @@ var ErrNotFound = errors.New("not found")
 // with a new key".
 var ErrDuplicateOccurrence = errors.New("occurrence already exists for this idempotency key")
 
+// ErrDuplicateNotification is returned when notification_log already has a row for
+// an event. Unlike ErrDuplicateOccurrence, a caller hitting this is not expected —
+// the dispatcher only calls RecordNotification once per event it has just sent —
+// but the same "treat it as already done" discipline applies if it ever fires.
+var ErrDuplicateNotification = errors.New("notification already recorded for this event")
+
 // Repository is the persistence interface the rest of the service depends on.
 //
 // Note there is no UpdateEvent or DeleteEvent. The event log is append-only by
@@ -48,6 +54,12 @@ type Repository interface {
 
 	AppendEvent(ctx context.Context, e domain.ScheduleEvent) error
 	ListEvents(ctx context.Context, scheduleID string) ([]domain.ScheduleEvent, error)
+
+	// UnnotifiedEvents and RecordNotification back the Phase 4 dispatcher
+	// (internal/notify): a transactional outbox off this same event log, the same
+	// projection style the spec §8 read models already use.
+	UnnotifiedEvents(ctx context.Context, eventTypes []string) ([]domain.ScheduleEvent, error)
+	RecordNotification(ctx context.Context, eventID int64, kind string) error
 
 	// Spec §6 transitions. Each mutates state that the event log must agree with,
 	// so callers run them inside InTx together with their AppendEvent.
@@ -140,12 +152,14 @@ func (r *PostgresRepository) CreateSchedule(ctx context.Context, s domain.Schedu
 	return r.inTx(ctx, func(tx *PostgresRepository) error {
 		_, err := tx.conn.ExecContext(ctx, `
 			INSERT INTO schedules (
-				id, customer_id, status, interval_days, anchor_date, next_run_date,
-				timezone, payment_token_ref, shipping_address_id, discount_pct, paused_until
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-			s.ID, s.CustomerID, string(s.Status), s.IntervalDays, s.AnchorDate.ToTime(),
-			datePtr(s.NextRunDate), s.Timezone, nullStr(s.PaymentTokenRef),
-			nullStr(s.ShippingAddressID), s.DiscountPct, datePtr(s.PausedUntil))
+				id, customer_id, customer_email, status, interval_days, anchor_date,
+				next_run_date, timezone, payment_token_ref, shipping_address_id,
+				discount_pct, paused_until
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+			s.ID, s.CustomerID, s.CustomerEmail, string(s.Status), s.IntervalDays,
+			s.AnchorDate.ToTime(), datePtr(s.NextRunDate), s.Timezone,
+			nullStr(s.PaymentTokenRef), nullStr(s.ShippingAddressID), s.DiscountPct,
+			datePtr(s.PausedUntil))
 		if err != nil {
 			return fmt.Errorf("insert schedule: %w", err)
 		}
@@ -162,8 +176,8 @@ func (r *PostgresRepository) CreateSchedule(ctx context.Context, s domain.Schedu
 	})
 }
 
-const scheduleColumns = `id, customer_id, status, interval_days, anchor_date,
-	next_run_date, timezone, coalesce(payment_token_ref,''),
+const scheduleColumns = `id, customer_id, customer_email, status, interval_days,
+	anchor_date, next_run_date, timezone, coalesce(payment_token_ref,''),
 	coalesce(shipping_address_id,''), discount_pct, paused_until, created_at, updated_at`
 
 func scanSchedule(row interface{ Scan(...any) error }) (domain.Schedule, error) {
@@ -173,9 +187,9 @@ func scanSchedule(row interface{ Scan(...any) error }) (domain.Schedule, error) 
 		anchor     time.Time
 		next, paus sql.NullTime
 	)
-	err := row.Scan(&s.ID, &s.CustomerID, &status, &s.IntervalDays, &anchor, &next,
-		&s.Timezone, &s.PaymentTokenRef, &s.ShippingAddressID, &s.DiscountPct, &paus,
-		&s.CreatedAt, &s.UpdatedAt)
+	err := row.Scan(&s.ID, &s.CustomerID, &s.CustomerEmail, &status, &s.IntervalDays,
+		&anchor, &next, &s.Timezone, &s.PaymentTokenRef, &s.ShippingAddressID,
+		&s.DiscountPct, &paus, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return domain.Schedule{}, err
 	}
@@ -403,6 +417,63 @@ func (r *PostgresRepository) ListEvents(ctx context.Context, scheduleID string) 
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// UnnotifiedEvents returns events of the given types that have no matching row in
+// notification_log — the outbox query the Phase 4 dispatcher polls.
+//
+// The LEFT JOIN / IS NULL shape (rather than NOT IN or NOT EXISTS) is deliberate:
+// it is a single indexed scan against notification_log's primary key, and it reads
+// the same as "events without a notification" rather than a double negative.
+func (r *PostgresRepository) UnnotifiedEvents(ctx context.Context, eventTypes []string) ([]domain.ScheduleEvent, error) {
+	rows, err := r.conn.QueryContext(ctx, `
+		SELECT e.id, e.schedule_id, e.event_type, e.actor, e.reason_code, e.payload, e.created_at
+		FROM schedule_events e
+		LEFT JOIN notification_log n ON n.event_id = e.id
+		WHERE e.event_type = ANY($1::text[]) AND n.event_id IS NULL
+		ORDER BY e.id`, eventTypes)
+	if err != nil {
+		return nil, fmt.Errorf("query unnotified events: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []domain.ScheduleEvent
+	for rows.Next() {
+		var (
+			e      domain.ScheduleEvent
+			actor  string
+			reason sql.NullString
+		)
+		if err := rows.Scan(&e.ID, &e.ScheduleID, &e.EventType, &actor, &reason,
+			&e.Payload, &e.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan unnotified event: %w", err)
+		}
+		e.Actor = domain.EventActor(actor)
+		if reason.Valid {
+			v := reason.String
+			e.ReasonCode = &v
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// RecordNotification marks one event as notified. The row's existence is the "sent"
+// fact — nothing ever updates or deletes it, same discipline as schedule_events.
+//
+// A duplicate call (the same event_id twice) returns ErrDuplicateNotification
+// rather than silently succeeding or erroring generically, matching the
+// ErrDuplicateOccurrence pattern above.
+func (r *PostgresRepository) RecordNotification(ctx context.Context, eventID int64, kind string) error {
+	_, err := r.conn.ExecContext(ctx,
+		`INSERT INTO notification_log (event_id, kind) VALUES ($1,$2)`, eventID, kind)
+	switch {
+	case isUniqueViolation(err, "notification_log_pkey"):
+		return ErrDuplicateNotification
+	case err != nil:
+		return fmt.Errorf("record notification: %w", err)
+	}
+	return nil
 }
 
 func datePtr(d *domain.Date) any {

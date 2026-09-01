@@ -1,0 +1,5 @@
+{{define "schedule_created_subject"}}Your CadenceOS replenishment schedule is set up{{end}}
+{{define "schedule_created_body"}}<p>Your automatic reordering schedule has been set up.</p>
+<p>Your first order is scheduled for {{.NextOrderDate}}, and orders will repeat every {{.IntervalDays}} days after that.</p>
+<p>You can pause, skip, or change this schedule anytime by contacting us at {{.SupportEmail}}.</p>
+{{end}}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/mail"
 	"time"
 
 	"github.com/google/uuid"
@@ -56,6 +57,7 @@ type occurrenceResponse struct {
 
 type createScheduleRequest struct {
 	CustomerID        string         `json:"customer_id"`
+	CustomerEmail     string         `json:"customer_email"`
 	IntervalDays      int            `json:"interval_days"`
 	AnchorDate        string         `json:"anchor_date"`
 	Timezone          string         `json:"timezone"`
@@ -77,6 +79,11 @@ func (h ScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	if req.CustomerID == "" {
 		writeError(w, http.StatusBadRequest, "customer_id is required")
+		return
+	}
+	customerEmail, err := parseSingleAddress(req.CustomerEmail)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "customer_email must be a single valid email address")
 		return
 	}
 	if err := domain.ValidateInterval(req.IntervalDays); err != nil {
@@ -104,6 +111,7 @@ func (h ScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	s := domain.Schedule{
 		ID:                uuid.NewString(),
 		CustomerID:        req.CustomerID,
+		CustomerEmail:     customerEmail,
 		Status:            domain.ScheduleActive,
 		IntervalDays:      req.IntervalDays,
 		AnchorDate:        anchor,
@@ -258,6 +266,18 @@ func parseDate(s string) (domain.Date, error) {
 		return domain.Date{}, err
 	}
 	return domain.DateOf(t), nil
+}
+
+// parseSingleAddress validates s as exactly one RFC 5322 address using the
+// standard library rather than a hand-rolled regex, and returns the normalized
+// address — never a "Display Name <addr>" form — since this is what lifecycle
+// notifications (spec §7) are sent to.
+func parseSingleAddress(s string) (string, error) {
+	addr, err := mail.ParseAddress(s)
+	if err != nil {
+		return "", err
+	}
+	return addr.Address, nil
 }
 
 func writeJSON(w http.ResponseWriter, code int, body any) {

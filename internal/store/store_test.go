@@ -695,6 +695,93 @@ func TestCreateScheduleIsAtomic(t *testing.T) {
 	}
 }
 
+// UnnotifiedEvents/RecordNotification back the Phase 4 dispatcher's outbox query —
+// events of the requested types that haven't been recorded in notification_log yet.
+func TestUnnotifiedEventsExcludesRecorded(t *testing.T) {
+	_, repo := newTestDB(t)
+	ctx := context.Background()
+
+	s := newSchedule(t, repo, domain.NewDate(2026, time.January, 1), 30)
+	if err := repo.AppendEvent(ctx, domain.ScheduleEvent{
+		ScheduleID: s.ID, EventType: domain.EventScheduleCreated, Actor: domain.ActorCustomer,
+	}); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	if err := repo.AppendEvent(ctx, domain.ScheduleEvent{
+		ScheduleID: s.ID, EventType: domain.EventSchedulePaused, Actor: domain.ActorCustomer,
+	}); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+
+	events, err := repo.UnnotifiedEvents(ctx, []string{domain.EventScheduleCreated, domain.EventSchedulePaused})
+	if err != nil {
+		t.Fatalf("UnnotifiedEvents: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("got %d unnotified events, want 2", len(events))
+	}
+
+	// Record one. It must disappear from the next query; the other stays.
+	if err := repo.RecordNotification(ctx, events[0].ID, "schedule_created"); err != nil {
+		t.Fatalf("RecordNotification: %v", err)
+	}
+	remaining, err := repo.UnnotifiedEvents(ctx, []string{domain.EventScheduleCreated, domain.EventSchedulePaused})
+	if err != nil {
+		t.Fatalf("UnnotifiedEvents (2nd): %v", err)
+	}
+	if len(remaining) != 1 || remaining[0].ID != events[1].ID {
+		t.Fatalf("got %+v, want only event %d remaining", remaining, events[1].ID)
+	}
+}
+
+// The event-type filter must actually filter — an event type the caller didn't ask
+// about (skip, defer, cadence change) must never trigger a notification meant only
+// for the four spec §7 sends this phase implements.
+func TestUnnotifiedEventsFiltersByType(t *testing.T) {
+	_, repo := newTestDB(t)
+	ctx := context.Background()
+
+	s := newSchedule(t, repo, domain.NewDate(2026, time.January, 1), 30)
+	if err := repo.AppendEvent(ctx, domain.ScheduleEvent{
+		ScheduleID: s.ID, EventType: domain.EventScheduleCadenceChanged, Actor: domain.ActorCustomer,
+	}); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+
+	events, err := repo.UnnotifiedEvents(ctx, []string{domain.EventScheduleCreated})
+	if err != nil {
+		t.Fatalf("UnnotifiedEvents: %v", err)
+	}
+	if len(events) != 0 {
+		t.Errorf("got %d events, want 0 — cadence_changed was not in the requested type list", len(events))
+	}
+}
+
+// A duplicate RecordNotification call must fail loudly, not silently double-count or
+// panic — the dispatcher relies on this to be safe against a re-run racing itself.
+func TestRecordNotificationRejectsDuplicate(t *testing.T) {
+	_, repo := newTestDB(t)
+	ctx := context.Background()
+
+	s := newSchedule(t, repo, domain.NewDate(2026, time.January, 1), 30)
+	if err := repo.AppendEvent(ctx, domain.ScheduleEvent{
+		ScheduleID: s.ID, EventType: domain.EventScheduleCreated, Actor: domain.ActorCustomer,
+	}); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	events, err := repo.UnnotifiedEvents(ctx, []string{domain.EventScheduleCreated})
+	if err != nil || len(events) != 1 {
+		t.Fatalf("setup: events=%+v err=%v", events, err)
+	}
+
+	if err := repo.RecordNotification(ctx, events[0].ID, "schedule_created"); err != nil {
+		t.Fatalf("first RecordNotification: %v", err)
+	}
+	if err := repo.RecordNotification(ctx, events[0].ID, "schedule_created"); !errors.Is(err, store.ErrDuplicateNotification) {
+		t.Fatalf("second RecordNotification error = %v, want ErrDuplicateNotification", err)
+	}
+}
+
 func mustList(t *testing.T, repo *store.PostgresRepository, scheduleID string) []domain.Occurrence {
 	t.Helper()
 	got, err := repo.ListOccurrences(context.Background(), scheduleID)
