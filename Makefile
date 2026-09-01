@@ -5,6 +5,10 @@
 # Tool versions are pinned here rather than floating. `go run tool@version` keeps them
 # out of go.mod (they are not build dependencies) while staying explicit and
 # reproducible -- the same reasoning as pinning an action to a commit SHA.
+# staticcheck's own dependency graph may need a newer Go than go.mod's directive; `go
+# run` fetches that toolchain transparently for this one subprocess (GOTOOLCHAIN=auto).
+# That's deterministic per pinned version and does not affect build/test, which run on
+# the toolchain go.mod actually declares.
 STATICCHECK_VERSION ?= v0.8.1
 GOVULNCHECK_VERSION ?= v1.7.0
 
