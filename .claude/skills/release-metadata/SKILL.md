@@ -11,6 +11,11 @@ is the document an executive approval attaches to. Schema:
 
 ## Before you write anything
 
+**No second human reviewer? Stop.** If `human_reviewer` would have to name the same
+person as `developer` — a solo-maintainer merge before `CODEOWNERS` is operational —
+do not write a record. See `docs/RELEASE_METADATA.md`'s "No second reviewer, no
+record" section.
+
 **Records are append-only.** Written once, never edited. If a record already exists
 for this SHA, stop — do not modify it. A record with a wrong value stays as it is,
 because it is evidence of what was believed at the time. A factual error about an
