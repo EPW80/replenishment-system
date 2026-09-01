@@ -185,6 +185,25 @@ conversation.
 
 ---
 
+## No second reviewer, no record
+
+`CODEOWNERS` is not yet operational in this repository (see
+[`LIFECYCLE.md`](LIFECYCLE.md) step 6), so peer approval currently depends on people
+rather than GitHub. Two merges have already gone through under that gap — PRs #2 and
+#5 — with only their author's approval.
+
+`human_reviewer` must differ from `developer`. A solo-maintainer merge has no second
+human to name there, and the fix is not to relax that requirement. **A merge with no
+real second human reviewer does not get a release-metadata record.** Naming the
+author as reviewer, or naming a bot, would be exactly the dishonest record the
+append-only design in this document exists to prevent.
+
+This is a gap, not a workaround: those commits sit outside the release process until
+`CODEOWNERS` (or an equivalent human peer-review step) is operational. Nothing is
+backfilled once it is — records simply resume for merges from that point forward.
+
+---
+
 ## Storage
 
 ```

@@ -98,6 +98,9 @@ When you do enable it, also enable **Dismiss stale approvals when new commits ar
 pushed** — otherwise an approval granted on one commit silently carries over to code
 pushed afterwards.
 
+Until then, a merge with no second human reviewer simply does not get a
+release-metadata record — see [`RELEASE_METADATA.md`](RELEASE_METADATA.md#no-second-reviewer-no-record).
+
 ## 7. Merge and release record
 
 On merge, create the release metadata record for the merge commit SHA. From here
