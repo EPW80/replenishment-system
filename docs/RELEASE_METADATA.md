@@ -188,9 +188,9 @@ conversation.
 ## No second reviewer, no record
 
 `CODEOWNERS` is not yet operational in this repository (see
-[`LIFECYCLE.md`](LIFECYCLE.md) step 6), so peer approval currently depends on people
-rather than GitHub. Two merges have already gone through under that gap — PRs #2 and
-#5 — with only their author's approval.
+[`LIFECYCLE.md`, "6. Peer approval"](LIFECYCLE.md#6-peer-approval)), so peer approval
+currently depends on people rather than GitHub. Two merges have already gone through
+under that gap — PRs #2 and #5 — with only their author's approval.
 
 `human_reviewer` must differ from `developer`. A solo-maintainer merge has no second
 human to name there, and the fix is not to relax that requirement. **A merge with no
