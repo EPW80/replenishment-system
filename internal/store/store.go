@@ -35,6 +35,16 @@ var ErrDuplicateOccurrence = errors.New("occurrence already exists for this idem
 type Repository interface {
 	CreateSchedule(ctx context.Context, s domain.Schedule, items []domain.ScheduleItem) error
 	GetSchedule(ctx context.Context, id string, scope Scope) (domain.Schedule, error)
+
+	// GetScheduleForUpdate reads a schedule and holds its row until the surrounding
+	// transaction ends. It is the serialization point for everything that changes a
+	// schedule: a caller that reads through it, validates, and writes before
+	// committing cannot have its decision invalidated in between.
+	//
+	// It requires a transaction — outside one there is nothing to hold the lock for,
+	// and returning an unlocked read would be a silent downgrade of the guarantee
+	// its callers are relying on.
+	GetScheduleForUpdate(ctx context.Context, id string, scope Scope) (domain.Schedule, error)
 	ListSchedulesByCustomer(ctx context.Context, customerID string) ([]domain.Schedule, error)
 	ListActiveSchedules(ctx context.Context) ([]domain.Schedule, error)
 	ListScheduleItems(ctx context.Context, scheduleID string, scope Scope) ([]domain.ScheduleItem, error)
@@ -209,6 +219,44 @@ func (r *PostgresRepository) GetSchedule(ctx context.Context, id string, scope S
 	}
 	if err != nil {
 		return domain.Schedule{}, fmt.Errorf("get schedule: %w", err)
+	}
+	return s, nil
+}
+
+// ErrNoTransaction is returned when a call that must serialize against other writers
+// is made outside a transaction.
+var ErrNoTransaction = errors.New("this call requires a transaction")
+
+// GetScheduleForUpdate reads a schedule and locks its row for the rest of the
+// transaction (spec §6).
+//
+// This is what makes a transition atomic against another transition. Reading, checking
+// the precondition, and writing are three steps, and without the lock another caller
+// can commit a status change in the gaps: both callers validate against a state that
+// was true when they looked and false by the time they wrote, and both apply. The row
+// lock collapses that window — the second caller waits, then re-reads the committed
+// row and finds its precondition no longer holds, which surfaces as a 409 rather than
+// as a second conflicting write.
+//
+// It refuses to run outside a transaction. A FOR UPDATE in its own implicit
+// transaction releases the lock the moment the statement returns, so it would read as
+// locking while guaranteeing nothing — the kind of false assurance that is worse than
+// no lock at all, because callers stop thinking about the race.
+func (r *PostgresRepository) GetScheduleForUpdate(ctx context.Context, id string, scope Scope) (domain.Schedule, error) {
+	if r.db != nil {
+		return domain.Schedule{}, ErrNoTransaction
+	}
+
+	where, args := scope.filterOwn(2)
+	row := r.conn.QueryRowContext(ctx,
+		`SELECT `+scheduleColumns+` FROM schedules WHERE id = $1`+where+` FOR UPDATE`,
+		append([]any{id}, args...)...)
+	s, err := scanSchedule(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Schedule{}, ErrNotFound
+	}
+	if err != nil {
+		return domain.Schedule{}, fmt.Errorf("get schedule for update: %w", err)
 	}
 	return s, nil
 }

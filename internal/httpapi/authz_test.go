@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"context"
 	"net/http"
+	"sync"
 	"testing"
 
 	"github.com/google/uuid"
@@ -216,5 +217,51 @@ func TestTransitionRecordsTheVerifiedActor(t *testing.T) {
 	}
 	if paused.Actor != domain.ActorCustomer {
 		t.Errorf("actor = %q, want customer", paused.Actor)
+	}
+}
+
+// Contending transitions surface as 409 at the HTTP layer, not as two 200s.
+//
+// This is the customer-visible half of the locking work: the loser is told the
+// schedule is no longer in a state that accepts the action, and a client that retries
+// after a resume succeeds. Two 200s would mean the portal showed two people the same
+// action succeeding while only one of them changed anything.
+func TestConcurrentTransitionsYieldOneSuccessAndConflicts(t *testing.T) {
+	h, repo, _ := newAPI(t)
+	s := newScheduleWithHorizon(t, repo)
+	cred := customerCred(t, s.CustomerID)
+
+	const callers = 6
+	codes := make([]int, callers)
+
+	var start, done sync.WaitGroup
+	start.Add(1)
+	for i := 0; i < callers; i++ {
+		done.Add(1)
+		go func() {
+			defer done.Done()
+			start.Wait()
+			codes[i] = do(t, h, http.MethodPost, "/schedules/"+s.ID+"/pause", `{}`, cred).Code
+		}()
+	}
+	start.Done()
+	done.Wait()
+
+	var ok, conflict int
+	for _, c := range codes {
+		switch c {
+		case http.StatusOK:
+			ok++
+		case http.StatusConflict:
+			conflict++
+		default:
+			t.Errorf("unexpected status %d", c)
+		}
+	}
+	if ok != 1 {
+		t.Errorf("%d requests got 200, want exactly 1", ok)
+	}
+	if conflict != callers-1 {
+		t.Errorf("%d requests got 409, want %d", conflict, callers-1)
 	}
 }
