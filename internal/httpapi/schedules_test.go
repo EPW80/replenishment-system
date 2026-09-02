@@ -4,19 +4,31 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 
+	"github.com/EPW80/replenishment-system/internal/auth"
 	"github.com/EPW80/replenishment-system/internal/httpapi"
 	"github.com/EPW80/replenishment-system/internal/materialize"
 	"github.com/EPW80/replenishment-system/internal/schedule"
 	"github.com/EPW80/replenishment-system/internal/store"
 	"github.com/EPW80/replenishment-system/internal/testsupport"
+)
+
+// Test credentials. Both are past the 32-character minimum the config enforces, so the
+// harness exercises the same verifiers production uses rather than a relaxed variant.
+const (
+	testJWTSecret  = "portal-test-secret-at-least-32-characters"
+	testServiceKey = "service-test-key-at-least-32-characters!!"
+	testIssuer     = "cadenceos-portal"
+	testAudience   = "cadenceos"
 )
 
 func newAPI(t *testing.T) (http.Handler, *store.PostgresRepository, *sql.DB) {
@@ -31,14 +43,53 @@ func newAPI(t *testing.T) (http.Handler, *store.PostgresRepository, *sql.DB) {
 			Service: schedule.New(repo, materialize.New(repo, 3, nil), time.Now),
 			Repo:    repo,
 		},
+		testMiddleware(),
 	)
 	return h, repo, db
 }
 
-func do(t *testing.T, h http.Handler, method, path, body string) *httptest.ResponseRecorder {
+// testMiddleware builds the same verifiers production uses, over the test credentials.
+func testMiddleware() httpapi.Middleware {
+	return httpapi.Middleware{
+		Tokens: auth.NewTokenVerifier(auth.TokenConfig{
+			Secret:   testJWTSecret,
+			Issuer:   testIssuer,
+			Audience: testAudience,
+		}),
+		ServiceKey: auth.NewServiceKeyVerifier(testServiceKey),
+		// Rejections are logged in production; here they are expected often enough
+		// that the noise would bury real failures.
+		Log: slog.New(slog.DiscardHandler),
+	}
+}
+
+// customerCred mints a portal token for one customer, the way the WP mu-plugin does.
+func customerCred(t *testing.T, customerID string) string {
+	t.Helper()
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		Subject:   customerID,
+		Issuer:    testIssuer,
+		Audience:  jwt.ClaimStrings{testAudience},
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+	}).SignedString([]byte(testJWTSecret))
+	if err != nil {
+		t.Fatalf("sign token: %v", err)
+	}
+	return signed
+}
+
+// serviceCred is the credential the WP backend presents to create schedules.
+func serviceCred() string { return testServiceKey }
+
+// do sends a request carrying cred as its bearer credential. An empty cred sends no
+// Authorization header at all, which is what the unauthenticated cases assert on.
+func do(t *testing.T, h http.Handler, method, path, body, cred string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(method, path, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
+	if cred != "" {
+		req.Header.Set("Authorization", "Bearer "+cred)
+	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	return rec
@@ -59,7 +110,7 @@ func TestCreateAndGetSchedule(t *testing.T) {
 		"items": [{"sku": "SKU-001", "quantity": 2}]
 	}`
 
-	rec := do(t, h, http.MethodPost, "/schedules", body)
+	rec := do(t, h, http.MethodPost, "/schedules", body, serviceCred())
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
@@ -84,7 +135,7 @@ func TestCreateAndGetSchedule(t *testing.T) {
 		t.Error("payment_token_ref leaked into the response")
 	}
 
-	get := do(t, h, http.MethodGet, "/schedules/"+id, "")
+	get := do(t, h, http.MethodGet, "/schedules/"+id, "", customerCred(t, customer))
 	if get.Code != http.StatusOK {
 		t.Fatalf("get status = %d", get.Code)
 	}
@@ -129,7 +180,7 @@ func TestCreateScheduleValidation(t *testing.T) {
 			tc.patch(payload)
 			b, _ := json.Marshal(payload)
 
-			rec := do(t, h, http.MethodPost, "/schedules", string(b))
+			rec := do(t, h, http.MethodPost, "/schedules", string(b), serviceCred())
 			if rec.Code != http.StatusBadRequest {
 				t.Errorf("status = %d, want 400 (body: %s)", rec.Code, rec.Body.String())
 			}
@@ -147,7 +198,7 @@ func TestCreateScheduleRejectsUnknownFields(t *testing.T) {
 		"timezone": "UTC", "items": [{"sku":"S","quantity":1}],
 		"doses_per_day": 2
 	}`
-	rec := do(t, h, http.MethodPost, "/schedules", body)
+	rec := do(t, h, http.MethodPost, "/schedules", body, serviceCred())
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400 — unknown fields must be rejected", rec.Code)
 	}
@@ -156,11 +207,11 @@ func TestCreateScheduleRejectsUnknownFields(t *testing.T) {
 func TestGetMissingScheduleReturns404(t *testing.T) {
 	h, _, _ := newAPI(t)
 
-	rec := do(t, h, http.MethodGet, "/schedules/"+uuid.NewString(), "")
+	rec := do(t, h, http.MethodGet, "/schedules/"+uuid.NewString(), "", customerCred(t, "cust_nobody"))
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", rec.Code)
 	}
-	rec = do(t, h, http.MethodGet, "/schedules/"+uuid.NewString()+"/occurrences", "")
+	rec = do(t, h, http.MethodGet, "/schedules/"+uuid.NewString()+"/occurrences", "", customerCred(t, "cust_nobody"))
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("occurrences status = %d, want 404", rec.Code)
 	}
@@ -174,7 +225,7 @@ func TestUpcomingQueueCarriesNoConsumptionFields(t *testing.T) {
 
 	body := `{"customer_id":"` + customer + `","interval_days":30,"anchor_date":"2026-01-01",
 		"timezone":"UTC","items":[{"sku":"SKU-001","quantity":1}]}`
-	rec := do(t, h, http.MethodPost, "/schedules", body)
+	rec := do(t, h, http.MethodPost, "/schedules", body, serviceCred())
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create failed: %s", rec.Body.String())
 	}
@@ -182,7 +233,7 @@ func TestUpcomingQueueCarriesNoConsumptionFields(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &created)
 	id := created["id"].(string)
 
-	got := do(t, h, http.MethodGet, "/schedules/"+id+"/occurrences", "")
+	got := do(t, h, http.MethodGet, "/schedules/"+id+"/occurrences", "", customerCred(t, customer))
 	if got.Code != http.StatusOK {
 		t.Fatalf("status = %d", got.Code)
 	}
@@ -206,12 +257,12 @@ func TestListSchedulesByCustomer(t *testing.T) {
 	for _, sku := range []string{"SKU-001", "SKU-002"} {
 		body := `{"customer_id":"` + customer + `","interval_days":30,"anchor_date":"2026-01-01",
 			"timezone":"UTC","items":[{"sku":"` + sku + `","quantity":1}]}`
-		if rec := do(t, h, http.MethodPost, "/schedules", body); rec.Code != http.StatusCreated {
+		if rec := do(t, h, http.MethodPost, "/schedules", body, serviceCred()); rec.Code != http.StatusCreated {
 			t.Fatalf("create %s: %s", sku, rec.Body.String())
 		}
 	}
 
-	rec := do(t, h, http.MethodGet, "/customers/"+customer+"/schedules", "")
+	rec := do(t, h, http.MethodGet, "/customers/"+customer+"/schedules", "", customerCred(t, customer))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}

@@ -46,6 +46,9 @@ migrations), `make materialize` (run the occurrence horizon job), `make db-up` /
 cmd/cadenceos/         Service entrypoint: HTTP server, graceful shutdown, /healthz
 cmd/migrate/           Applies pending migrations (deploy step and CI)
 cmd/materialize/       Nightly occurrence-horizon job (spec §5 step 1)
+internal/auth/         Credential verification: portal JWTs and the service key.
+                       Turns a credential into a Principal; nothing downstream
+                       learns how callers are authenticated.
 internal/domain/       Entities and pure cadence math. No I/O — keeps the date
                        arithmetic testable without a database.
 internal/store/        Data access (sqlc + pgx) behind a Repository interface

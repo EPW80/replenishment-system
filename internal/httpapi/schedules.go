@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/EPW80/replenishment-system/internal/auth"
 	"github.com/EPW80/replenishment-system/internal/domain"
 	"github.com/EPW80/replenishment-system/internal/store"
 )
@@ -65,7 +66,30 @@ type createScheduleRequest struct {
 	Items             []itemResponse `json:"items"`
 }
 
+// scopeFor returns the store scope this request may read within, and reports whether
+// the caller was authenticated at all.
+//
+// A missing principal means the route was wired without its middleware. That is a bug
+// in the router rather than a request to reject politely, but it still must not fall
+// through to an unrestricted read — so it denies, and the caller turns that into a 500.
+func scopeFor(r *http.Request) (store.Scope, bool) {
+	principal, ok := auth.FromContext(r.Context())
+	if !ok {
+		return store.CustomerScope(""), false
+	}
+	if principal.Kind == auth.KindService {
+		return store.SystemScope(), true
+	}
+	return store.CustomerScope(principal.CustomerID), true
+}
+
 // Create handles POST /schedules.
+//
+// customer_id comes from the request body rather than from a token, which is safe only
+// because this route requires the service credential: the WP backend is vouching for
+// the customer whose checkout it just processed. It would not be safe on a
+// customer-token route, where the body is attacker-controlled — that is the reason the
+// two live in different route groups.
 func (h ScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req createScheduleRequest
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
@@ -148,11 +172,20 @@ func (h ScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 // Get handles GET /schedules/{id}.
+//
+// A schedule belonging to another customer is a 404, not a 403: the scoped read cannot
+// see it, and answering "forbidden" would confirm that the ID names a real schedule.
 func (h ScheduleHandler) Get(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := r.PathValue("id")
 
-	s, err := h.Repo.GetSchedule(ctx, id)
+	scope, ok := scopeFor(r)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "could not read schedule")
+		return
+	}
+
+	s, err := h.Repo.GetSchedule(ctx, id, scope)
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "schedule not found")
 		return
@@ -162,7 +195,7 @@ func (h ScheduleHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, err := h.Repo.ListScheduleItems(ctx, id)
+	items, err := h.Repo.ListScheduleItems(ctx, id, scope)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not read schedule items")
 		return
@@ -179,7 +212,13 @@ func (h ScheduleHandler) Upcoming(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := r.PathValue("id")
 
-	if _, err := h.Repo.GetSchedule(ctx, id); errors.Is(err, store.ErrNotFound) {
+	scope, ok := scopeFor(r)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "could not read schedule")
+		return
+	}
+
+	if _, err := h.Repo.GetSchedule(ctx, id, scope); errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "schedule not found")
 		return
 	} else if err != nil {
@@ -187,7 +226,7 @@ func (h ScheduleHandler) Upcoming(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	occurrences, err := h.Repo.ListOccurrences(ctx, id)
+	occurrences, err := h.Repo.ListOccurrences(ctx, id, scope)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not read upcoming orders")
 		return
@@ -206,10 +245,30 @@ func (h ScheduleHandler) Upcoming(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListByCustomer handles GET /customers/{customerID}/schedules.
+//
+// The customer in the path must be the one the token authenticates. Asking for someone
+// else's list answers 404 rather than 403, for the same reason as Get: a 403 would
+// confirm the customer ID exists.
 func (h ScheduleHandler) ListByCustomer(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	customerID := r.PathValue("customerID")
 
-	schedules, err := h.Repo.ListSchedulesByCustomer(ctx, r.PathValue("customerID"))
+	principal, ok := auth.FromContext(ctx)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "could not read schedules")
+		return
+	}
+	if !principal.OwnsCustomer(customerID) {
+		writeError(w, http.StatusNotFound, "customer not found")
+		return
+	}
+	scope, ok := scopeFor(r)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "could not read schedules")
+		return
+	}
+
+	schedules, err := h.Repo.ListSchedulesByCustomer(ctx, customerID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not read schedules")
 		return
@@ -217,7 +276,7 @@ func (h ScheduleHandler) ListByCustomer(w http.ResponseWriter, r *http.Request) 
 
 	out := make([]scheduleResponse, 0, len(schedules))
 	for _, s := range schedules {
-		items, err := h.Repo.ListScheduleItems(ctx, s.ID)
+		items, err := h.Repo.ListScheduleItems(ctx, s.ID, scope)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "could not read schedule items")
 			return

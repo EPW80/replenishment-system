@@ -22,6 +22,21 @@ import (
 	"github.com/EPW80/replenishment-system/internal/store"
 )
 
+// Caller is the verified identity a transition is performed on behalf of.
+//
+// Actor and Scope travel together because they answer the same question from two
+// sides: who the event log should record, and which schedules this caller may touch at
+// all. Passing them as one value means a new call site cannot supply the actor and
+// silently forget the scope, which would read as an audit-trail detail while actually
+// being an authorization hole.
+//
+// It carries no token and no header — internal/auth turns a credential into this, so
+// the state machine never learns how callers are authenticated.
+type Caller struct {
+	Actor domain.EventActor
+	Scope store.Scope
+}
+
 // Service applies transitions to schedules.
 type Service struct {
 	repo store.Repository
@@ -53,8 +68,14 @@ func (svc *Service) today(s domain.Schedule) domain.Date {
 }
 
 // load fetches a schedule and checks the action against its status (spec §6).
-func (svc *Service) load(ctx context.Context, scheduleID string, a domain.Action) (domain.Schedule, error) {
-	s, err := svc.repo.GetSchedule(ctx, scheduleID)
+//
+// The scoped read is also this package's authorization gate: a schedule belonging to
+// another customer comes back as ErrNotFound, so every transition below refuses it
+// before touching any state. The gate is a check rather than a lock, because this read
+// happens outside the transaction that follows — closing that gap is the concurrency
+// work, which moves the load inside the transaction with SELECT ... FOR UPDATE.
+func (svc *Service) load(ctx context.Context, scheduleID string, a domain.Action, scope store.Scope) (domain.Schedule, error) {
+	s, err := svc.repo.GetSchedule(ctx, scheduleID, scope)
 	if err != nil {
 		return domain.Schedule{}, err
 	}
@@ -79,8 +100,8 @@ func payload(kv map[string]any) []byte {
 // Unexecuted occurrences are canceled rather than left planned: a paused schedule that
 // still shows upcoming orders is a schedule the customer will reasonably believe is
 // still going to charge them.
-func (svc *Service) Pause(ctx context.Context, scheduleID string, until *domain.Date, actor domain.EventActor) (domain.Schedule, error) {
-	s, err := svc.load(ctx, scheduleID, domain.ActionPause)
+func (svc *Service) Pause(ctx context.Context, scheduleID string, until *domain.Date, caller Caller) (domain.Schedule, error) {
+	s, err := svc.load(ctx, scheduleID, domain.ActionPause, caller.Scope)
 	if err != nil {
 		return domain.Schedule{}, err
 	}
@@ -109,14 +130,14 @@ func (svc *Service) Pause(ctx context.Context, scheduleID string, until *domain.
 		return tx.AppendEvent(ctx, domain.ScheduleEvent{
 			ScheduleID: s.ID,
 			EventType:  domain.EventSchedulePaused,
-			Actor:      actor,
+			Actor:      caller.Actor,
 			Payload:    payload(body),
 		})
 	})
 	if err != nil {
 		return domain.Schedule{}, err
 	}
-	return svc.repo.GetSchedule(ctx, scheduleID)
+	return svc.repo.GetSchedule(ctx, scheduleID, caller.Scope)
 }
 
 // Resume reactivates a paused schedule, re-anchoring it to today (spec §6).
@@ -124,8 +145,8 @@ func (svc *Service) Pause(ctx context.Context, scheduleID string, until *domain.
 // Re-anchoring is why the customer's next order arrives one interval from now rather
 // than on the rhythm they left behind — a schedule paused for six months should not
 // resume by immediately charging for the shipments it missed.
-func (svc *Service) Resume(ctx context.Context, scheduleID string, actor domain.EventActor) (domain.Schedule, error) {
-	s, err := svc.load(ctx, scheduleID, domain.ActionResume)
+func (svc *Service) Resume(ctx context.Context, scheduleID string, caller Caller) (domain.Schedule, error) {
+	s, err := svc.load(ctx, scheduleID, domain.ActionResume, caller.Scope)
 	if err != nil {
 		return domain.Schedule{}, err
 	}
@@ -141,7 +162,7 @@ func (svc *Service) Resume(ctx context.Context, scheduleID string, actor domain.
 		if err := tx.AppendEvent(ctx, domain.ScheduleEvent{
 			ScheduleID: s.ID,
 			EventType:  domain.EventScheduleResumed,
-			Actor:      actor,
+			Actor:      caller.Actor,
 			Payload: payload(map[string]any{
 				"anchor_date":   today.String(),
 				"interval_days": s.IntervalDays,
@@ -160,7 +181,7 @@ func (svc *Service) Resume(ctx context.Context, scheduleID string, actor domain.
 	if err != nil {
 		return domain.Schedule{}, err
 	}
-	return svc.repo.GetSchedule(ctx, scheduleID)
+	return svc.repo.GetSchedule(ctx, scheduleID, caller.Scope)
 }
 
 // SkipNext skips the soonest upcoming order (spec §6).
@@ -168,8 +189,8 @@ func (svc *Service) Resume(ctx context.Context, scheduleID string, actor domain.
 // Only that occurrence changes. Every later one keeps its date, because dates derive
 // from the anchor rather than from the occurrence before them — skipping one shipment
 // does not slide the rest of the schedule.
-func (svc *Service) SkipNext(ctx context.Context, scheduleID string, actor domain.EventActor) (domain.Schedule, error) {
-	s, err := svc.load(ctx, scheduleID, domain.ActionSkipNext)
+func (svc *Service) SkipNext(ctx context.Context, scheduleID string, caller Caller) (domain.Schedule, error) {
+	s, err := svc.load(ctx, scheduleID, domain.ActionSkipNext, caller.Scope)
 	if err != nil {
 		return domain.Schedule{}, err
 	}
@@ -186,7 +207,7 @@ func (svc *Service) SkipNext(ctx context.Context, scheduleID string, actor domai
 		if err := tx.AppendEvent(ctx, domain.ScheduleEvent{
 			ScheduleID: s.ID,
 			EventType:  domain.EventOccurrenceSkipped,
-			Actor:      actor,
+			Actor:      caller.Actor,
 			Payload: payload(map[string]any{
 				"sequence_no":   occ.SequenceNo,
 				"scheduled_for": occ.ScheduledFor.String(),
@@ -202,7 +223,7 @@ func (svc *Service) SkipNext(ctx context.Context, scheduleID string, actor domai
 	if err != nil {
 		return domain.Schedule{}, err
 	}
-	return svc.repo.GetSchedule(ctx, scheduleID)
+	return svc.repo.GetSchedule(ctx, scheduleID, caller.Scope)
 }
 
 // Defer pushes the soonest upcoming order back by days (spec §6).
@@ -210,8 +231,8 @@ func (svc *Service) SkipNext(ctx context.Context, scheduleID string, actor domai
 // The anchor does not move. That is the deliberate choice in spec §6: a customer who
 // pushes one shipment a week out returns to their normal rhythm afterward rather than
 // permanently sliding.
-func (svc *Service) Defer(ctx context.Context, scheduleID string, days int, actor domain.EventActor) (domain.Schedule, error) {
-	s, err := svc.load(ctx, scheduleID, domain.ActionDefer)
+func (svc *Service) Defer(ctx context.Context, scheduleID string, days int, caller Caller) (domain.Schedule, error) {
+	s, err := svc.load(ctx, scheduleID, domain.ActionDefer, caller.Scope)
 	if err != nil {
 		return domain.Schedule{}, err
 	}
@@ -234,7 +255,7 @@ func (svc *Service) Defer(ctx context.Context, scheduleID string, days int, acto
 		if err := tx.AppendEvent(ctx, domain.ScheduleEvent{
 			ScheduleID: s.ID,
 			EventType:  domain.EventOccurrenceDeferred,
-			Actor:      actor,
+			Actor:      caller.Actor,
 			Payload: payload(map[string]any{
 				"sequence_no": occ.SequenceNo,
 				"from":        from.String(),
@@ -251,7 +272,7 @@ func (svc *Service) Defer(ctx context.Context, scheduleID string, days int, acto
 	if err != nil {
 		return domain.Schedule{}, err
 	}
-	return svc.repo.GetSchedule(ctx, scheduleID)
+	return svc.repo.GetSchedule(ctx, scheduleID, caller.Scope)
 }
 
 // ChangeCadence updates the interval and re-anchors the schedule (spec §6).
@@ -261,8 +282,8 @@ func (svc *Service) Defer(ctx context.Context, scheduleID string, days int, acto
 // passed. Planned occurrences are rewritten; pending ones are left alone, because a
 // pending occurrence has already had its pre-billing notice sent (spec §5) and moving
 // it would contradict the notice the customer was just given.
-func (svc *Service) ChangeCadence(ctx context.Context, scheduleID string, intervalDays int, actor domain.EventActor) (domain.Schedule, error) {
-	s, err := svc.load(ctx, scheduleID, domain.ActionChangeCadence)
+func (svc *Service) ChangeCadence(ctx context.Context, scheduleID string, intervalDays int, caller Caller) (domain.Schedule, error) {
+	s, err := svc.load(ctx, scheduleID, domain.ActionChangeCadence, caller.Scope)
 	if err != nil {
 		return domain.Schedule{}, err
 	}
@@ -292,7 +313,7 @@ func (svc *Service) ChangeCadence(ctx context.Context, scheduleID string, interv
 		if err := tx.AppendEvent(ctx, domain.ScheduleEvent{
 			ScheduleID: s.ID,
 			EventType:  domain.EventScheduleCadenceChanged,
-			Actor:      actor,
+			Actor:      caller.Actor,
 			Payload: payload(map[string]any{
 				"from_interval_days":    s.IntervalDays,
 				"to_interval_days":      intervalDays,
@@ -317,15 +338,15 @@ func (svc *Service) ChangeCadence(ctx context.Context, scheduleID string, interv
 	if err != nil {
 		return domain.Schedule{}, err
 	}
-	return svc.repo.GetSchedule(ctx, scheduleID)
+	return svc.repo.GetSchedule(ctx, scheduleID, caller.Scope)
 }
 
 // Cancel ends a schedule, capturing why (spec §6).
 //
 // The reason code is required and drawn from a closed set: spec §8 projects churn
 // analysis off these events, and free text does not aggregate.
-func (svc *Service) Cancel(ctx context.Context, scheduleID, reasonCode string, actor domain.EventActor) (domain.Schedule, error) {
-	s, err := svc.load(ctx, scheduleID, domain.ActionCancel)
+func (svc *Service) Cancel(ctx context.Context, scheduleID, reasonCode string, caller Caller) (domain.Schedule, error) {
+	s, err := svc.load(ctx, scheduleID, domain.ActionCancel, caller.Scope)
 	if err != nil {
 		return domain.Schedule{}, err
 	}
@@ -348,7 +369,7 @@ func (svc *Service) Cancel(ctx context.Context, scheduleID, reasonCode string, a
 		return tx.AppendEvent(ctx, domain.ScheduleEvent{
 			ScheduleID: s.ID,
 			EventType:  domain.EventScheduleCanceled,
-			Actor:      actor,
+			Actor:      caller.Actor,
 			ReasonCode: &reason,
 			Payload:    payload(map[string]any{"occurrences_canceled": canceled}),
 		})
@@ -356,7 +377,7 @@ func (svc *Service) Cancel(ctx context.Context, scheduleID, reasonCode string, a
 	if err != nil {
 		return domain.Schedule{}, err
 	}
-	return svc.repo.GetSchedule(ctx, scheduleID)
+	return svc.repo.GetSchedule(ctx, scheduleID, caller.Scope)
 }
 
 // nextOccurrence returns the occurrence a skip or defer targets, translating "none

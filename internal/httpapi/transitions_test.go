@@ -14,6 +14,7 @@ import (
 	"github.com/EPW80/replenishment-system/internal/domain"
 	"github.com/EPW80/replenishment-system/internal/httpapi"
 	"github.com/EPW80/replenishment-system/internal/materialize"
+	"github.com/EPW80/replenishment-system/internal/schedule"
 	"github.com/EPW80/replenishment-system/internal/store"
 )
 
@@ -71,7 +72,7 @@ func TestTransitionEndpointsHappyPath(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newScheduleWithHorizon(t, repo)
-			rec := do(t, h, http.MethodPost, "/schedules/"+s.ID+tc.path, tc.body)
+			rec := do(t, h, http.MethodPost, "/schedules/"+s.ID+tc.path, tc.body, customerCred(t, s.CustomerID))
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 			}
@@ -92,10 +93,10 @@ func TestResumeEndpoint(t *testing.T) {
 	h, repo, _ := newAPI(t)
 	s := newScheduleWithHorizon(t, repo)
 
-	if rec := do(t, h, http.MethodPost, "/schedules/"+s.ID+"/pause", `{}`); rec.Code != http.StatusOK {
+	if rec := do(t, h, http.MethodPost, "/schedules/"+s.ID+"/pause", `{}`, customerCred(t, s.CustomerID)); rec.Code != http.StatusOK {
 		t.Fatalf("pause: %d %s", rec.Code, rec.Body.String())
 	}
-	rec := do(t, h, http.MethodPost, "/schedules/"+s.ID+"/resume", ``)
+	rec := do(t, h, http.MethodPost, "/schedules/"+s.ID+"/resume", ``, customerCred(t, s.CustomerID))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("resume: %d %s", rec.Code, rec.Body.String())
 	}
@@ -126,11 +127,11 @@ func TestFailedPreconditionIsConflict(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newScheduleWithHorizon(t, repo)
 			if tc.setup != "" {
-				if rec := do(t, h, http.MethodPost, "/schedules/"+s.ID+tc.setup, `{}`); rec.Code != http.StatusOK {
+				if rec := do(t, h, http.MethodPost, "/schedules/"+s.ID+tc.setup, `{}`, customerCred(t, s.CustomerID)); rec.Code != http.StatusOK {
 					t.Fatalf("setup %s: %d %s", tc.setup, rec.Code, rec.Body.String())
 				}
 			}
-			rec := do(t, h, http.MethodPost, "/schedules/"+s.ID+tc.path, tc.body)
+			rec := do(t, h, http.MethodPost, "/schedules/"+s.ID+tc.path, tc.body, customerCred(t, s.CustomerID))
 			if rec.Code != http.StatusConflict {
 				t.Fatalf("status = %d, want 409; body = %s", rec.Code, rec.Body.String())
 			}
@@ -146,7 +147,7 @@ func TestFailedPreconditionIsConflict(t *testing.T) {
 func TestErrorCopyFollowsTheComplianceBoundary(t *testing.T) {
 	h, repo, _ := newAPI(t)
 	s := newScheduleWithHorizon(t, repo)
-	if rec := do(t, h, http.MethodPost, "/schedules/"+s.ID+"/cancel", `{"reason_code":"other"}`); rec.Code != http.StatusOK {
+	if rec := do(t, h, http.MethodPost, "/schedules/"+s.ID+"/cancel", `{"reason_code":"other"}`, customerCred(t, s.CustomerID)); rec.Code != http.StatusOK {
 		t.Fatalf("cancel: %d %s", rec.Code, rec.Body.String())
 	}
 
@@ -161,7 +162,7 @@ func TestErrorCopyFollowsTheComplianceBoundary(t *testing.T) {
 		case "/cancel":
 			body = `{"reason_code":"other"}`
 		}
-		rec := do(t, h, http.MethodPost, "/schedules/"+s.ID+path, body)
+		rec := do(t, h, http.MethodPost, "/schedules/"+s.ID+path, body, customerCred(t, s.CustomerID))
 		msg := strings.ToLower(rec.Body.String())
 		for _, w := range banned {
 			if strings.Contains(msg, w) {
@@ -195,7 +196,7 @@ func TestMalformedRequestsAreBadRequest(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newScheduleWithHorizon(t, repo)
-			rec := do(t, h, http.MethodPost, "/schedules/"+s.ID+tc.path, tc.body)
+			rec := do(t, h, http.MethodPost, "/schedules/"+s.ID+tc.path, tc.body, customerCred(t, s.CustomerID))
 			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want 400; body = %s", rec.Code, rec.Body.String())
 			}
@@ -215,7 +216,7 @@ func TestTransitionsOnUnknownScheduleAreNotFound(t *testing.T) {
 		"/cadence": `{"interval_days":60}`,
 		"/cancel":  `{"reason_code":"other"}`,
 	} {
-		rec := do(t, h, http.MethodPost, "/schedules/"+missing+path, body)
+		rec := do(t, h, http.MethodPost, "/schedules/"+missing+path, body, customerCred(t, "cust_nobody"))
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("%s status = %d, want 404; body = %s", path, rec.Code, rec.Body.String())
 		}
@@ -229,12 +230,12 @@ func TestTransitionsRejectGet(t *testing.T) {
 	s := newScheduleWithHorizon(t, repo)
 
 	for _, path := range []string{"/pause", "/resume", "/skip", "/defer", "/cadence", "/cancel"} {
-		rec := do(t, h, http.MethodGet, "/schedules/"+s.ID+path, ``)
+		rec := do(t, h, http.MethodGet, "/schedules/"+s.ID+path, ``, customerCred(t, s.CustomerID))
 		if rec.Code == http.StatusOK {
 			t.Errorf("GET %s succeeded; transitions must not be reachable by GET", path)
 		}
 	}
-	if got, err := repo.GetSchedule(context.Background(), s.ID); err != nil {
+	if got, err := repo.GetSchedule(context.Background(), s.ID, store.SystemScope()); err != nil {
 		t.Fatalf("get: %v", err)
 	} else if got.Status != domain.ScheduleActive {
 		t.Errorf("status = %s after GET requests, want active", got.Status)
@@ -246,9 +247,12 @@ func TestTransitionsRejectGet(t *testing.T) {
 func TestUnexpectedErrorsAreInternalServerError(t *testing.T) {
 	h := httpapi.TransitionHandler{Service: failingService{}}
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /schedules/{id}/cancel", h.Cancel)
+	// Wired through the real middleware: without it the handler would answer 500
+	// because no principal was attached, and this test would pass without ever
+	// reaching the failing service it is supposed to be exercising.
+	mux.Handle("POST /schedules/{id}/cancel", testMiddleware().RequireCustomer(http.HandlerFunc(h.Cancel)))
 
-	rec := do(t, mux, http.MethodPost, "/schedules/abc/cancel", `{"reason_code":"other"}`)
+	rec := do(t, mux, http.MethodPost, "/schedules/abc/cancel", `{"reason_code":"other"}`, customerCred(t, "cust_anyone"))
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", rec.Code)
 	}
@@ -262,21 +266,21 @@ type failingService struct{}
 
 var errDown = errors.New("dial tcp 127.0.0.1:5432: connection refused")
 
-func (failingService) Pause(context.Context, string, *domain.Date, domain.EventActor) (domain.Schedule, error) {
+func (failingService) Pause(context.Context, string, *domain.Date, schedule.Caller) (domain.Schedule, error) {
 	return domain.Schedule{}, errDown
 }
-func (failingService) Resume(context.Context, string, domain.EventActor) (domain.Schedule, error) {
+func (failingService) Resume(context.Context, string, schedule.Caller) (domain.Schedule, error) {
 	return domain.Schedule{}, errDown
 }
-func (failingService) SkipNext(context.Context, string, domain.EventActor) (domain.Schedule, error) {
+func (failingService) SkipNext(context.Context, string, schedule.Caller) (domain.Schedule, error) {
 	return domain.Schedule{}, errDown
 }
-func (failingService) Defer(context.Context, string, int, domain.EventActor) (domain.Schedule, error) {
+func (failingService) Defer(context.Context, string, int, schedule.Caller) (domain.Schedule, error) {
 	return domain.Schedule{}, errDown
 }
-func (failingService) ChangeCadence(context.Context, string, int, domain.EventActor) (domain.Schedule, error) {
+func (failingService) ChangeCadence(context.Context, string, int, schedule.Caller) (domain.Schedule, error) {
 	return domain.Schedule{}, errDown
 }
-func (failingService) Cancel(context.Context, string, string, domain.EventActor) (domain.Schedule, error) {
+func (failingService) Cancel(context.Context, string, string, schedule.Caller) (domain.Schedule, error) {
 	return domain.Schedule{}, errDown
 }
