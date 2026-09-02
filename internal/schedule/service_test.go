@@ -16,6 +16,10 @@ import (
 	"github.com/EPW80/replenishment-system/internal/testsupport"
 )
 
+// anyCaller is an unscoped caller, for the tests below that are about transition
+// behaviour rather than about who may perform it. Ownership scoping has its own tests.
+var anyCaller = schedule.Caller{Actor: domain.ActorCustomer, Scope: store.SystemScope()}
+
 // The clock is fixed so every expected date in this file is arithmetic, not a
 // function of when the suite runs.
 var fixedNow = time.Date(2026, time.January, 15, 12, 0, 0, 0, time.UTC)
@@ -56,7 +60,7 @@ func newActive(t *testing.T, repo *store.PostgresRepository, anchor domain.Date,
 
 func occurrences(t *testing.T, repo *store.PostgresRepository, id string) []domain.Occurrence {
 	t.Helper()
-	out, err := repo.ListOccurrences(context.Background(), id)
+	out, err := repo.ListOccurrences(context.Background(), id, store.SystemScope())
 	if err != nil {
 		t.Fatalf("list occurrences: %v", err)
 	}
@@ -94,7 +98,7 @@ func TestPauseCancelsUpcomingOrders(t *testing.T) {
 	ctx := context.Background()
 	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
 
-	got, err := svc.Pause(ctx, s.ID, nil, domain.ActorCustomer)
+	got, err := svc.Pause(ctx, s.ID, nil, anyCaller)
 	if err != nil {
 		t.Fatalf("pause: %v", err)
 	}
@@ -119,7 +123,7 @@ func TestPauseStoresPausedUntil(t *testing.T) {
 	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
 
 	until := domain.NewDate(2026, time.March, 1)
-	got, err := svc.Pause(context.Background(), s.ID, &until, domain.ActorCustomer)
+	got, err := svc.Pause(context.Background(), s.ID, &until, anyCaller)
 	if err != nil {
 		t.Fatalf("pause: %v", err)
 	}
@@ -133,7 +137,7 @@ func TestPauseRejectsPastResumeDate(t *testing.T) {
 	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
 
 	past := domain.NewDate(2025, time.December, 1)
-	_, err := svc.Pause(context.Background(), s.ID, &past, domain.ActorCustomer)
+	_, err := svc.Pause(context.Background(), s.ID, &past, anyCaller)
 	if !domain.IsTransitionError(err) {
 		t.Fatalf("err = %v, want a TransitionError for a past resume date", err)
 	}
@@ -144,10 +148,10 @@ func TestPauseIsNotRepeatable(t *testing.T) {
 	ctx := context.Background()
 	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
 
-	if _, err := svc.Pause(ctx, s.ID, nil, domain.ActorCustomer); err != nil {
+	if _, err := svc.Pause(ctx, s.ID, nil, anyCaller); err != nil {
 		t.Fatalf("first pause: %v", err)
 	}
-	if _, err := svc.Pause(ctx, s.ID, nil, domain.ActorCustomer); !domain.IsTransitionError(err) {
+	if _, err := svc.Pause(ctx, s.ID, nil, anyCaller); !domain.IsTransitionError(err) {
 		t.Fatalf("second pause returned %v, want a TransitionError", err)
 	}
 }
@@ -159,10 +163,10 @@ func TestResumeReAnchorsToToday(t *testing.T) {
 	ctx := context.Background()
 	s := newActive(t, repo, domain.NewDate(2025, time.June, 1), 30)
 
-	if _, err := svc.Pause(ctx, s.ID, nil, domain.ActorCustomer); err != nil {
+	if _, err := svc.Pause(ctx, s.ID, nil, anyCaller); err != nil {
 		t.Fatalf("pause: %v", err)
 	}
-	got, err := svc.Resume(ctx, s.ID, domain.ActorCustomer)
+	got, err := svc.Resume(ctx, s.ID, anyCaller)
 	if err != nil {
 		t.Fatalf("resume: %v", err)
 	}
@@ -195,10 +199,10 @@ func TestResumeDoesNotReuseSequenceNumbers(t *testing.T) {
 	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
 
 	before := occurrences(t, repo, s.ID)
-	if _, err := svc.Pause(ctx, s.ID, nil, domain.ActorCustomer); err != nil {
+	if _, err := svc.Pause(ctx, s.ID, nil, anyCaller); err != nil {
 		t.Fatalf("pause: %v", err)
 	}
-	if _, err := svc.Resume(ctx, s.ID, domain.ActorCustomer); err != nil {
+	if _, err := svc.Resume(ctx, s.ID, anyCaller); err != nil {
 		t.Fatalf("resume: %v", err)
 	}
 
@@ -229,7 +233,7 @@ func TestSkipNextLeavesLaterOrdersOnTheirDates(t *testing.T) {
 		survivors[o.SequenceNo] = o.ScheduledFor
 	}
 
-	if _, err := svc.SkipNext(ctx, s.ID, domain.ActorCustomer); err != nil {
+	if _, err := svc.SkipNext(ctx, s.ID, anyCaller); err != nil {
 		t.Fatalf("skip: %v", err)
 	}
 
@@ -247,7 +251,7 @@ func TestSkipNextLeavesLaterOrdersOnTheirDates(t *testing.T) {
 	}
 
 	// The horizon is topped back up so the portal still shows a full upcoming queue.
-	after, err := repo.GetSchedule(ctx, s.ID)
+	after, err := repo.GetSchedule(ctx, s.ID, store.SystemScope())
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -270,7 +274,7 @@ func TestDeferMovesOnlyTheNextOrder(t *testing.T) {
 	before := occurrences(t, repo, s.ID)
 	target, following := before[0], before[1]
 
-	got, err := svc.Defer(ctx, s.ID, 7, domain.ActorCustomer)
+	got, err := svc.Defer(ctx, s.ID, 7, anyCaller)
 	if err != nil {
 		t.Fatalf("defer: %v", err)
 	}
@@ -298,7 +302,7 @@ func TestDeferRejectsOutOfRangeDays(t *testing.T) {
 	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
 
 	for _, days := range []int{0, -3, domain.MaxDeferDays + 1} {
-		if _, err := svc.Defer(context.Background(), s.ID, days, domain.ActorCustomer); err == nil {
+		if _, err := svc.Defer(context.Background(), s.ID, days, anyCaller); err == nil {
 			t.Errorf("defer of %d days was accepted", days)
 		}
 	}
@@ -308,14 +312,14 @@ func TestSkipAndDeferRejectedOnPausedSchedule(t *testing.T) {
 	repo, svc := setup(t)
 	ctx := context.Background()
 	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
-	if _, err := svc.Pause(ctx, s.ID, nil, domain.ActorCustomer); err != nil {
+	if _, err := svc.Pause(ctx, s.ID, nil, anyCaller); err != nil {
 		t.Fatalf("pause: %v", err)
 	}
 
-	if _, err := svc.SkipNext(ctx, s.ID, domain.ActorCustomer); !domain.IsTransitionError(err) {
+	if _, err := svc.SkipNext(ctx, s.ID, anyCaller); !domain.IsTransitionError(err) {
 		t.Errorf("skip on a paused schedule returned %v, want a TransitionError", err)
 	}
-	if _, err := svc.Defer(ctx, s.ID, 7, domain.ActorCustomer); !domain.IsTransitionError(err) {
+	if _, err := svc.Defer(ctx, s.ID, 7, anyCaller); !domain.IsTransitionError(err) {
 		t.Errorf("defer on a paused schedule returned %v, want a TransitionError", err)
 	}
 }
@@ -334,7 +338,7 @@ func TestChangeCadenceReAnchorsToLastPlacedOrder(t *testing.T) {
 		t.Fatalf("mark placed: %v", err)
 	}
 
-	got, err := svc.ChangeCadence(ctx, s.ID, 60, domain.ActorCustomer)
+	got, err := svc.ChangeCadence(ctx, s.ID, 60, anyCaller)
 	if err != nil {
 		t.Fatalf("change cadence: %v", err)
 	}
@@ -359,7 +363,7 @@ func TestChangeCadenceAnchorsToTodayWhenNothingPlaced(t *testing.T) {
 	repo, svc := setup(t)
 	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
 
-	got, err := svc.ChangeCadence(context.Background(), s.ID, 45, domain.ActorCustomer)
+	got, err := svc.ChangeCadence(context.Background(), s.ID, 45, anyCaller)
 	if err != nil {
 		t.Fatalf("change cadence: %v", err)
 	}
@@ -381,7 +385,7 @@ func TestChangeCadenceLeavesPendingOccurrencesAlone(t *testing.T) {
 		t.Fatalf("arm occurrence: %v", err)
 	}
 
-	if _, err := svc.ChangeCadence(ctx, s.ID, 90, domain.ActorCustomer); err != nil {
+	if _, err := svc.ChangeCadence(ctx, s.ID, 90, anyCaller); err != nil {
 		t.Fatalf("change cadence: %v", err)
 	}
 
@@ -403,7 +407,7 @@ func TestChangeCadenceRejectsOutOfRangeInterval(t *testing.T) {
 	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
 
 	for _, interval := range []int{0, 6, 181, -30} {
-		if _, err := svc.ChangeCadence(context.Background(), s.ID, interval, domain.ActorCustomer); err == nil {
+		if _, err := svc.ChangeCadence(context.Background(), s.ID, interval, anyCaller); err == nil {
 			t.Errorf("interval of %d days was accepted", interval)
 		}
 	}
@@ -416,7 +420,7 @@ func TestCancelSettlesEverything(t *testing.T) {
 	ctx := context.Background()
 	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
 
-	got, err := svc.Cancel(ctx, s.ID, domain.ReasonTooExpensive, domain.ActorCustomer)
+	got, err := svc.Cancel(ctx, s.ID, domain.ReasonTooExpensive, anyCaller)
 	if err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
@@ -447,7 +451,7 @@ func TestCancelRequiresAKnownReason(t *testing.T) {
 	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
 
 	for _, reason := range []string{"", "changed my mind", "TOO_EXPENSIVE"} {
-		if _, err := svc.Cancel(context.Background(), s.ID, reason, domain.ActorCustomer); err == nil {
+		if _, err := svc.Cancel(context.Background(), s.ID, reason, anyCaller); err == nil {
 			t.Errorf("cancel accepted reason %q; the set is closed so churn analysis can aggregate", reason)
 		}
 	}
@@ -459,17 +463,17 @@ func TestCanceledScheduleAcceptsNoFurtherTransitions(t *testing.T) {
 	repo, svc := setup(t)
 	ctx := context.Background()
 	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
-	if _, err := svc.Cancel(ctx, s.ID, domain.ReasonOther, domain.ActorCustomer); err != nil {
+	if _, err := svc.Cancel(ctx, s.ID, domain.ReasonOther, anyCaller); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
 
 	checks := map[string]error{
-		"pause":   errOf(func() error { _, e := svc.Pause(ctx, s.ID, nil, domain.ActorCustomer); return e }),
-		"resume":  errOf(func() error { _, e := svc.Resume(ctx, s.ID, domain.ActorCustomer); return e }),
-		"skip":    errOf(func() error { _, e := svc.SkipNext(ctx, s.ID, domain.ActorCustomer); return e }),
-		"defer":   errOf(func() error { _, e := svc.Defer(ctx, s.ID, 7, domain.ActorCustomer); return e }),
-		"cadence": errOf(func() error { _, e := svc.ChangeCadence(ctx, s.ID, 60, domain.ActorCustomer); return e }),
-		"cancel":  errOf(func() error { _, e := svc.Cancel(ctx, s.ID, domain.ReasonOther, domain.ActorCustomer); return e }),
+		"pause":   errOf(func() error { _, e := svc.Pause(ctx, s.ID, nil, anyCaller); return e }),
+		"resume":  errOf(func() error { _, e := svc.Resume(ctx, s.ID, anyCaller); return e }),
+		"skip":    errOf(func() error { _, e := svc.SkipNext(ctx, s.ID, anyCaller); return e }),
+		"defer":   errOf(func() error { _, e := svc.Defer(ctx, s.ID, 7, anyCaller); return e }),
+		"cadence": errOf(func() error { _, e := svc.ChangeCadence(ctx, s.ID, 60, anyCaller); return e }),
+		"cancel":  errOf(func() error { _, e := svc.Cancel(ctx, s.ID, domain.ReasonOther, anyCaller); return e }),
 	}
 	for name, err := range checks {
 		if !domain.IsTransitionError(err) {
@@ -487,10 +491,10 @@ func TestTransitionsOnMissingScheduleReportNotFound(t *testing.T) {
 	ctx := context.Background()
 	missing := uuid.NewString()
 
-	if _, err := svc.Pause(ctx, missing, nil, domain.ActorCustomer); !errors.Is(err, store.ErrNotFound) {
+	if _, err := svc.Pause(ctx, missing, nil, anyCaller); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("pause on a missing schedule returned %v, want ErrNotFound", err)
 	}
-	if _, err := svc.Cancel(ctx, missing, domain.ReasonOther, domain.ActorCustomer); !errors.Is(err, store.ErrNotFound) {
+	if _, err := svc.Cancel(ctx, missing, domain.ReasonOther, anyCaller); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("cancel on a missing schedule returned %v, want ErrNotFound", err)
 	}
 }
@@ -523,12 +527,12 @@ func TestEveryTransitionRecordsExactlyOneEvent(t *testing.T) {
 		name string
 		run  func() error
 	}{
-		{"skip", func() error { _, e := svc.SkipNext(ctx, s.ID, domain.ActorCustomer); return e }},
-		{"defer", func() error { _, e := svc.Defer(ctx, s.ID, 5, domain.ActorCustomer); return e }},
-		{"cadence", func() error { _, e := svc.ChangeCadence(ctx, s.ID, 45, domain.ActorCustomer); return e }},
-		{"pause", func() error { _, e := svc.Pause(ctx, s.ID, nil, domain.ActorCustomer); return e }},
-		{"resume", func() error { _, e := svc.Resume(ctx, s.ID, domain.ActorCustomer); return e }},
-		{"cancel", func() error { _, e := svc.Cancel(ctx, s.ID, domain.ReasonOther, domain.ActorCustomer); return e }},
+		{"skip", func() error { _, e := svc.SkipNext(ctx, s.ID, anyCaller); return e }},
+		{"defer", func() error { _, e := svc.Defer(ctx, s.ID, 5, anyCaller); return e }},
+		{"cadence", func() error { _, e := svc.ChangeCadence(ctx, s.ID, 45, anyCaller); return e }},
+		{"pause", func() error { _, e := svc.Pause(ctx, s.ID, nil, anyCaller); return e }},
+		{"resume", func() error { _, e := svc.Resume(ctx, s.ID, anyCaller); return e }},
+		{"cancel", func() error { _, e := svc.Cancel(ctx, s.ID, domain.ReasonOther, anyCaller); return e }},
 	}
 	for i, step := range steps {
 		if err := step.run(); err != nil {
@@ -546,10 +550,10 @@ func TestEventPayloadsAreValidJSON(t *testing.T) {
 	ctx := context.Background()
 	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
 
-	if _, err := svc.Defer(ctx, s.ID, 3, domain.ActorCustomer); err != nil {
+	if _, err := svc.Defer(ctx, s.ID, 3, anyCaller); err != nil {
 		t.Fatalf("defer: %v", err)
 	}
-	if _, err := svc.Cancel(ctx, s.ID, domain.ReasonDeliveryIssue, domain.ActorCustomer); err != nil {
+	if _, err := svc.Cancel(ctx, s.ID, domain.ReasonDeliveryIssue, anyCaller); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
 

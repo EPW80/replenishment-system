@@ -34,14 +34,14 @@ var ErrDuplicateOccurrence = errors.New("occurrence already exists for this idem
 // construction (spec §3): the absence of those methods is the enforcement.
 type Repository interface {
 	CreateSchedule(ctx context.Context, s domain.Schedule, items []domain.ScheduleItem) error
-	GetSchedule(ctx context.Context, id string) (domain.Schedule, error)
+	GetSchedule(ctx context.Context, id string, scope Scope) (domain.Schedule, error)
 	ListSchedulesByCustomer(ctx context.Context, customerID string) ([]domain.Schedule, error)
 	ListActiveSchedules(ctx context.Context) ([]domain.Schedule, error)
-	ListScheduleItems(ctx context.Context, scheduleID string) ([]domain.ScheduleItem, error)
+	ListScheduleItems(ctx context.Context, scheduleID string, scope Scope) ([]domain.ScheduleItem, error)
 	UpdateScheduleNextRun(ctx context.Context, scheduleID string, next *domain.Date) error
 
 	CreateOccurrence(ctx context.Context, o domain.Occurrence) error
-	ListOccurrences(ctx context.Context, scheduleID string) ([]domain.Occurrence, error)
+	ListOccurrences(ctx context.Context, scheduleID string, scope Scope) ([]domain.Occurrence, error)
 	ListPlannedOccurrences(ctx context.Context, scheduleID string) ([]domain.Occurrence, error)
 	CountFutureplannedOccurrences(ctx context.Context, scheduleID string, after domain.Date) (int, error)
 	MaxSequenceNo(ctx context.Context, scheduleID string) (int, error)
@@ -192,8 +192,17 @@ func scanSchedule(row interface{ Scan(...any) error }) (domain.Schedule, error) 
 	return s, nil
 }
 
-func (r *PostgresRepository) GetSchedule(ctx context.Context, id string) (domain.Schedule, error) {
-	row := r.conn.QueryRowContext(ctx, `SELECT `+scheduleColumns+` FROM schedules WHERE id = $1`, id)
+// GetSchedule reads one schedule, limited to what scope allows.
+//
+// A schedule that exists but belongs to another customer returns ErrNotFound, the same
+// as one that does not exist. The handlers map that to 404, which is the point:
+// distinguishing "not yours" from "no such thing" would confirm to an attacker which
+// schedule IDs are real.
+func (r *PostgresRepository) GetSchedule(ctx context.Context, id string, scope Scope) (domain.Schedule, error) {
+	where, args := scope.filterOwn(2)
+	row := r.conn.QueryRowContext(ctx,
+		`SELECT `+scheduleColumns+` FROM schedules WHERE id = $1`+where,
+		append([]any{id}, args...)...)
 	s, err := scanSchedule(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Schedule{}, ErrNotFound
@@ -230,10 +239,12 @@ func (r *PostgresRepository) ListActiveSchedules(ctx context.Context) ([]domain.
 	return r.querySchedules(ctx, `WHERE status = 'active' ORDER BY next_run_date NULLS FIRST, created_at`)
 }
 
-func (r *PostgresRepository) ListScheduleItems(ctx context.Context, scheduleID string) ([]domain.ScheduleItem, error) {
+func (r *PostgresRepository) ListScheduleItems(ctx context.Context, scheduleID string, scope Scope) ([]domain.ScheduleItem, error) {
+	where, args := scope.filterVia("schedule_id", 2)
 	rows, err := r.conn.QueryContext(ctx, `
 		SELECT id, schedule_id, sku, quantity, created_at
-		FROM schedule_items WHERE schedule_id = $1 ORDER BY sku`, scheduleID)
+		FROM schedule_items WHERE schedule_id = $1`+where+` ORDER BY sku`,
+		append([]any{scheduleID}, args...)...)
 	if err != nil {
 		return nil, fmt.Errorf("query schedule items: %w", err)
 	}
@@ -318,8 +329,11 @@ func (r *PostgresRepository) queryOccurrences(ctx context.Context, where string,
 	return out, rows.Err()
 }
 
-func (r *PostgresRepository) ListOccurrences(ctx context.Context, scheduleID string) ([]domain.Occurrence, error) {
-	return r.queryOccurrences(ctx, `WHERE schedule_id = $1 ORDER BY sequence_no`, scheduleID)
+func (r *PostgresRepository) ListOccurrences(ctx context.Context, scheduleID string, scope Scope) ([]domain.Occurrence, error) {
+	where, args := scope.filterVia("schedule_id", 2)
+	return r.queryOccurrences(ctx,
+		`WHERE schedule_id = $1`+where+` ORDER BY sequence_no`,
+		append([]any{scheduleID}, args...)...)
 }
 
 func (r *PostgresRepository) ListPlannedOccurrences(ctx context.Context, scheduleID string) ([]domain.Occurrence, error) {

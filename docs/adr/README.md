@@ -14,6 +14,7 @@ costs), and Status.
 | [0003](0003-goose-migrations-sqlc-pgx.md) | `goose` for migrations, `sqlc` + `pgx` for data access | Accepted, provisional |
 | [0004](0004-anchor-relative-date-math.md) | Compute `next_run_date` anchor-relative, never incrementally | Accepted |
 | [0005](0005-compliance-boundary-enforcement.md) | Enforce the §2 compliance boundary with a build-failing guard | Accepted |
+| [0006](0006-portal-jwt-and-service-credential-auth.md) | Portal JWT for customers, a separate service credential for checkout | Accepted |
 
 **"Provisional"** marks a decision taken without access to PartnerOS. The spec (§4)
 directs reuse of whatever PartnerOS settled on rather than introducing a second

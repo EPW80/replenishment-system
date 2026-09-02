@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/EPW80/replenishment-system/internal/domain"
+	"github.com/EPW80/replenishment-system/internal/schedule"
 	"github.com/EPW80/replenishment-system/internal/store"
 )
 
@@ -61,7 +62,7 @@ func TestTransitionSequencesPreserveInvariants(t *testing.T) {
 		checkInvariants(t, repo, s.ID, state, today, history)
 
 		for step := 0; step < propSteps; step++ {
-			before, err := repo.GetSchedule(ctx, s.ID)
+			before, err := repo.GetSchedule(ctx, s.ID, store.SystemScope())
 			if err != nil {
 				t.Fatalf("get schedule: %v", err)
 			}
@@ -72,7 +73,7 @@ func TestTransitionSequencesPreserveInvariants(t *testing.T) {
 
 			switch {
 			case err == nil:
-				after, gerr := repo.GetSchedule(ctx, s.ID)
+				after, gerr := repo.GetSchedule(ctx, s.ID, store.SystemScope())
 				if gerr != nil {
 					t.Fatalf("get schedule: %v", gerr)
 				}
@@ -85,7 +86,7 @@ func TestTransitionSequencesPreserveInvariants(t *testing.T) {
 			case domain.IsTransitionError(err):
 				// A rejected transition must be a no-op. A precondition that fails
 				// halfway leaves a schedule in a state no transition table describes.
-				after, gerr := repo.GetSchedule(ctx, s.ID)
+				after, gerr := repo.GetSchedule(ctx, s.ID, store.SystemScope())
 				if gerr != nil {
 					t.Fatalf("get schedule: %v", gerr)
 				}
@@ -108,34 +109,34 @@ func TestTransitionSequencesPreserveInvariants(t *testing.T) {
 
 // applyRandomAction picks one of the six spec §6 transitions and applies it.
 func applyRandomAction(ctx context.Context, svc interface {
-	Pause(context.Context, string, *domain.Date, domain.EventActor) (domain.Schedule, error)
-	Resume(context.Context, string, domain.EventActor) (domain.Schedule, error)
-	SkipNext(context.Context, string, domain.EventActor) (domain.Schedule, error)
-	Defer(context.Context, string, int, domain.EventActor) (domain.Schedule, error)
-	ChangeCadence(context.Context, string, int, domain.EventActor) (domain.Schedule, error)
-	Cancel(context.Context, string, string, domain.EventActor) (domain.Schedule, error)
+	Pause(context.Context, string, *domain.Date, schedule.Caller) (domain.Schedule, error)
+	Resume(context.Context, string, schedule.Caller) (domain.Schedule, error)
+	SkipNext(context.Context, string, schedule.Caller) (domain.Schedule, error)
+	Defer(context.Context, string, int, schedule.Caller) (domain.Schedule, error)
+	ChangeCadence(context.Context, string, int, schedule.Caller) (domain.Schedule, error)
+	Cancel(context.Context, string, string, schedule.Caller) (domain.Schedule, error)
 }, id string, rng *rand.Rand) (domain.Action, string, error) {
 	switch rng.IntN(6) {
 	case 0:
-		_, err := svc.Pause(ctx, id, nil, domain.ActorCustomer)
+		_, err := svc.Pause(ctx, id, nil, anyCaller)
 		return domain.ActionPause, "pause", err
 	case 1:
-		_, err := svc.Resume(ctx, id, domain.ActorCustomer)
+		_, err := svc.Resume(ctx, id, anyCaller)
 		return domain.ActionResume, "resume", err
 	case 2:
-		_, err := svc.SkipNext(ctx, id, domain.ActorCustomer)
+		_, err := svc.SkipNext(ctx, id, anyCaller)
 		return domain.ActionSkipNext, "skip", err
 	case 3:
 		days := 1 + rng.IntN(30)
-		_, err := svc.Defer(ctx, id, days, domain.ActorCustomer)
+		_, err := svc.Defer(ctx, id, days, anyCaller)
 		return domain.ActionDefer, fmt.Sprintf("defer(%d)", days), err
 	case 4:
 		interval := 7 + rng.IntN(174)
-		_, err := svc.ChangeCadence(ctx, id, interval, domain.ActorCustomer)
+		_, err := svc.ChangeCadence(ctx, id, interval, anyCaller)
 		return domain.ActionChangeCadence, fmt.Sprintf("cadence(%d)", interval), err
 	default:
 		reason := domain.CancellationReasons[rng.IntN(len(domain.CancellationReasons))]
-		_, err := svc.Cancel(ctx, id, reason, domain.ActorCustomer)
+		_, err := svc.Cancel(ctx, id, reason, anyCaller)
 		return domain.ActionCancel, "cancel(" + reason + ")", err
 	}
 }
@@ -172,7 +173,7 @@ func checkInvariants(t *testing.T, repo *store.PostgresRepository, id string, st
 	t.Helper()
 	ctx := context.Background()
 
-	s, err := repo.GetSchedule(ctx, id)
+	s, err := repo.GetSchedule(ctx, id, store.SystemScope())
 	if err != nil {
 		t.Fatalf("get schedule: %v", err)
 	}

@@ -28,7 +28,28 @@ type Config struct {
 	// MaterializeHorizon is how many future planned occurrences to keep per active
 	// schedule. Spec §5 default is 3.
 	MaterializeHorizon int
+
+	// PortalJWTSecret is the HS256 key the WP mu-plugin signs customer tokens with
+	// (spec §4). Required.
+	PortalJWTSecret string
+
+	// PortalJWTIssuer and PortalJWTAudience are the iss and aud claims a customer
+	// token must carry. Checking them is what stops a token minted for some other
+	// service, or by some other brand's deployment, from working here.
+	PortalJWTIssuer   string
+	PortalJWTAudience string
+
+	// ServiceAPIKey is the credential a trusted backend presents to create schedules
+	// at checkout, where there is no customer session to mint a token from. Required.
+	ServiceAPIKey string
 }
+
+// minSecretLength is the shortest credential this service will start with.
+//
+// 32 bytes matches HS256's output size: a shorter key does not make the signature
+// weaker in an obvious way, which is exactly why a short one gets used by accident and
+// stays. Rejecting it at boot is cheaper than discovering it in a review.
+const minSecretLength = 32
 
 // Load reads configuration from the environment, applying defaults.
 //
@@ -41,10 +62,24 @@ func Load() (Config, error) {
 		Port:               8080,
 		BuildSHA:           envOr("BUILD_SHA", "unknown"),
 		MaterializeHorizon: 3,
+		PortalJWTSecret:    os.Getenv("PORTAL_JWT_SECRET"),
+		PortalJWTIssuer:    envOr("PORTAL_JWT_ISSUER", "cadenceos-portal"),
+		PortalJWTAudience:  envOr("PORTAL_JWT_AUDIENCE", "cadenceos"),
+		ServiceAPIKey:      os.Getenv("SERVICE_API_KEY"),
 	}
 
 	if c.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
+	}
+
+	// The credentials are required rather than defaulted for the same reason as
+	// DATABASE_URL, one step further: a service that starts without them serves every
+	// schedule to anyone who asks. Refusing to boot is the only safe default.
+	if err := requireSecret("PORTAL_JWT_SECRET", c.PortalJWTSecret); err != nil {
+		return Config{}, err
+	}
+	if err := requireSecret("SERVICE_API_KEY", c.ServiceAPIKey); err != nil {
+		return Config{}, err
 	}
 
 	if v := os.Getenv("PORT"); v != "" {
@@ -70,6 +105,20 @@ func Load() (Config, error) {
 	}
 
 	return c, nil
+}
+
+// requireSecret rejects a missing or too-short credential.
+//
+// The error names the variable but never its value: a config error is one of the
+// likelier things to end up pasted into an issue or a log aggregator.
+func requireSecret(key, value string) error {
+	if value == "" {
+		return fmt.Errorf("%s is required", key)
+	}
+	if len(value) < minSecretLength {
+		return fmt.Errorf("%s must be at least %d characters", key, minSecretLength)
+	}
+	return nil
 }
 
 func envOr(key, fallback string) string {

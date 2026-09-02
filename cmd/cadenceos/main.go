@@ -15,6 +15,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"github.com/EPW80/replenishment-system/internal/auth"
 	"github.com/EPW80/replenishment-system/internal/config"
 	"github.com/EPW80/replenishment-system/internal/httpapi"
 	"github.com/EPW80/replenishment-system/internal/materialize"
@@ -63,6 +64,18 @@ func run() error {
 	repo := store.New(db)
 	materializer := materialize.New(repo, cfg.MaterializeHorizon, slog.Default())
 
+	// Credentials are verified per request against these; config refuses to start
+	// without them, so there is no unauthenticated mode to fall back into.
+	middleware := httpapi.Middleware{
+		Tokens: auth.NewTokenVerifier(auth.TokenConfig{
+			Secret:   cfg.PortalJWTSecret,
+			Issuer:   cfg.PortalJWTIssuer,
+			Audience: cfg.PortalJWTAudience,
+		}),
+		ServiceKey: auth.NewServiceKeyVerifier(cfg.ServiceAPIKey),
+		Log:        slog.Default(),
+	}
+
 	srv := &http.Server{
 		Addr: fmt.Sprintf(":%d", cfg.Port),
 		Handler: httpapi.NewServiceRouter(
@@ -76,6 +89,7 @@ func run() error {
 				Service: schedule.New(repo, materializer, time.Now),
 				Repo:    repo,
 			},
+			middleware,
 		),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,

@@ -34,7 +34,7 @@ func TestIdempotencyKeyPreventsDuplicates(t *testing.T) {
 		t.Fatalf("second insert error = %v, want ErrDuplicateOccurrence", err)
 	}
 
-	got, err := repo.ListOccurrences(ctx, s.ID)
+	got, err := repo.ListOccurrences(ctx, s.ID, store.SystemScope())
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestScheduleRoundTrip(t *testing.T) {
 	anchor := domain.NewDate(2026, time.March, 15)
 	s := newSchedule(t, repo, anchor, 45)
 
-	got, err := repo.GetSchedule(ctx, s.ID)
+	got, err := repo.GetSchedule(ctx, s.ID, store.SystemScope())
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestScheduleRoundTrip(t *testing.T) {
 		t.Errorf("timezone = %q", got.Timezone)
 	}
 
-	items, err := repo.ListScheduleItems(ctx, s.ID)
+	items, err := repo.ListScheduleItems(ctx, s.ID, store.SystemScope())
 	if err != nil {
 		t.Fatalf("list items: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestScheduleRoundTrip(t *testing.T) {
 		t.Errorf("unexpected items: %+v", items)
 	}
 
-	if _, err := repo.GetSchedule(ctx, uuid.NewString()); !errors.Is(err, store.ErrNotFound) {
+	if _, err := repo.GetSchedule(ctx, uuid.NewString(), store.SystemScope()); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("missing schedule error = %v, want ErrNotFound", err)
 	}
 }
@@ -244,7 +244,7 @@ func TestUpdateScheduleNextRun(t *testing.T) {
 	if err := repo.UpdateScheduleNextRun(ctx, s.ID, &next); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	got, err := repo.GetSchedule(ctx, s.ID)
+	got, err := repo.GetSchedule(ctx, s.ID, store.SystemScope())
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestUpdateScheduleNextRun(t *testing.T) {
 	if err := repo.UpdateScheduleNextRun(ctx, s.ID, nil); err != nil {
 		t.Fatalf("clear: %v", err)
 	}
-	got, _ = repo.GetSchedule(ctx, s.ID)
+	got, _ = repo.GetSchedule(ctx, s.ID, store.SystemScope())
 	if got.NextRunDate != nil {
 		t.Errorf("next_run_date = %v, want nil", got.NextRunDate)
 	}
@@ -300,7 +300,7 @@ func TestUpdateScheduleStatusClearsPausedUntilOnResume(t *testing.T) {
 		t.Fatalf("resume: %v", err)
 	}
 
-	got, err := repo.GetSchedule(ctx, s.ID)
+	got, err := repo.GetSchedule(ctx, s.ID, store.SystemScope())
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -339,7 +339,7 @@ func TestUpdateScheduleCadenceValidatesInterval(t *testing.T) {
 		t.Fatalf("valid cadence rejected: %v", err)
 	}
 
-	got, _ := repo.GetSchedule(ctx, s.ID)
+	got, _ := repo.GetSchedule(ctx, s.ID, store.SystemScope())
 	if got.IntervalDays != 45 || !got.AnchorDate.Equal(anchor) {
 		t.Errorf("cadence = %d days from %s, want 45 from %s", got.IntervalDays, got.AnchorDate, anchor)
 	}
@@ -363,7 +363,7 @@ func TestUpdateOccurrenceStatusRefusesPlacedOrders(t *testing.T) {
 	if err := repo.UpdateOccurrenceStatus(ctx, occ.ID, domain.OccurrenceSkipped); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("skipping a placed order returned %v, want ErrNotFound", err)
 	}
-	got, _ := repo.ListOccurrences(ctx, s.ID)
+	got, _ := repo.ListOccurrences(ctx, s.ID, store.SystemScope())
 	if got[0].Status != domain.OccurrencePlaced {
 		t.Errorf("status = %s, want the placed order untouched", got[0].Status)
 	}
@@ -598,7 +598,7 @@ func TestInTxRollsBackEverythingOnError(t *testing.T) {
 		t.Fatalf("InTx returned %v, want the caller's error", err)
 	}
 
-	got, err := repo.GetSchedule(ctx, s.ID)
+	got, err := repo.GetSchedule(ctx, s.ID, store.SystemScope())
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -634,7 +634,7 @@ func TestInTxCommitsOnSuccess(t *testing.T) {
 		t.Fatalf("InTx: %v", err)
 	}
 
-	got, _ := repo.GetSchedule(ctx, s.ID)
+	got, _ := repo.GetSchedule(ctx, s.ID, store.SystemScope())
 	if got.Status != domain.SchedulePaused {
 		t.Errorf("status = %s, want paused", got.Status)
 	}
@@ -663,7 +663,7 @@ func TestInTxNestsIntoTheOuterTransaction(t *testing.T) {
 		t.Fatalf("InTx returned %v, want the caller's error", err)
 	}
 
-	got, _ := repo.GetSchedule(ctx, s.ID)
+	got, _ := repo.GetSchedule(ctx, s.ID, store.SystemScope())
 	if got.Status != domain.ScheduleActive {
 		t.Errorf("status = %s — the inner transaction committed independently of the outer one", got.Status)
 	}
@@ -690,14 +690,14 @@ func TestCreateScheduleIsAtomic(t *testing.T) {
 	if err := repo.CreateSchedule(ctx, s, items); err == nil {
 		t.Fatal("a zero-quantity item was accepted")
 	}
-	if _, err := repo.GetSchedule(ctx, s.ID); !errors.Is(err, store.ErrNotFound) {
+	if _, err := repo.GetSchedule(ctx, s.ID, store.SystemScope()); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("get returned %v, want ErrNotFound — a half-built schedule survived", err)
 	}
 }
 
 func mustList(t *testing.T, repo *store.PostgresRepository, scheduleID string) []domain.Occurrence {
 	t.Helper()
-	got, err := repo.ListOccurrences(context.Background(), scheduleID)
+	got, err := repo.ListOccurrences(context.Background(), scheduleID, store.SystemScope())
 	if err != nil {
 		t.Fatalf("list occurrences: %v", err)
 	}

@@ -53,7 +53,7 @@ func TestRunCreatesHorizon(t *testing.T) {
 		t.Fatalf("created=%d dupes=%d, want 3 and 0", created, dupes)
 	}
 
-	got, err := repo.ListOccurrences(ctx, s.ID)
+	got, err := repo.ListOccurrences(ctx, s.ID, store.SystemScope())
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestRunIsIdempotent(t *testing.T) {
 	if _, _, err := m.Run(ctx, s, today); err != nil {
 		t.Fatalf("first run: %v", err)
 	}
-	before, _ := repo.ListOccurrences(ctx, s.ID)
+	before, _ := repo.ListOccurrences(ctx, s.ID, store.SystemScope())
 
 	for i := 0; i < 3; i++ {
 		created, _, err := m.Run(ctx, s, today)
@@ -109,7 +109,7 @@ func TestRunIsIdempotent(t *testing.T) {
 		}
 	}
 
-	after, _ := repo.ListOccurrences(ctx, s.ID)
+	after, _ := repo.ListOccurrences(ctx, s.ID, store.SystemScope())
 	if len(after) != len(before) {
 		t.Fatalf("occurrence count changed from %d to %d across reruns", len(before), len(after))
 	}
@@ -142,7 +142,7 @@ func TestRunTopsUpAsTimeAdvances(t *testing.T) {
 		t.Error("expected the horizon to be topped up after time advanced")
 	}
 
-	got, _ := repo.ListOccurrences(ctx, s.ID)
+	got, _ := repo.ListOccurrences(ctx, s.ID, store.SystemScope())
 	seen := map[int]bool{}
 	for _, o := range got {
 		if seen[o.SequenceNo] {
@@ -168,7 +168,7 @@ func TestRunDoesNotMaterializeThePast(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 
-	got, _ := repo.ListOccurrences(ctx, s.ID)
+	got, _ := repo.ListOccurrences(ctx, s.ID, store.SystemScope())
 	if len(got) != 3 {
 		t.Fatalf("got %d occurrences, want 3", len(got))
 	}
@@ -212,7 +212,7 @@ func TestRunSetsNextRunDate(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 
-	got, err := repo.GetSchedule(ctx, s.ID)
+	got, err := repo.GetSchedule(ctx, s.ID, store.SystemScope())
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -287,7 +287,7 @@ func TestRunAcrossDSTBoundary(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 
-	got, _ := repo.ListOccurrences(ctx, s.ID)
+	got, _ := repo.ListOccurrences(ctx, s.ID, store.SystemScope())
 	for _, o := range got {
 		want, _ := domain.OccurrenceDate(anchor, 7, o.SequenceNo)
 		if !o.ScheduledFor.Equal(want) {
@@ -319,7 +319,7 @@ func TestRunAfterReAnchorPlansOneIntervalOut(t *testing.T) {
 	if _, _, err := m.Run(ctx, s, domain.NewDate(2026, time.January, 15)); err != nil {
 		t.Fatalf("first run: %v", err)
 	}
-	before, _ := repo.ListOccurrences(ctx, s.ID)
+	before, _ := repo.ListOccurrences(ctx, s.ID, store.SystemScope())
 	if len(before) != 3 {
 		t.Fatalf("setup: got %d occurrences, want 3", len(before))
 	}
@@ -357,7 +357,7 @@ func TestRunAfterReAnchorPlansOneIntervalOut(t *testing.T) {
 
 	// Sequence numbers continue past the history rather than restarting, so no
 	// idempotency key is ever reused.
-	all, _ := repo.ListOccurrences(ctx, s.ID)
+	all, _ := repo.ListOccurrences(ctx, s.ID, store.SystemScope())
 	seen := map[int]bool{}
 	keys := map[string]bool{}
 	for _, o := range all {

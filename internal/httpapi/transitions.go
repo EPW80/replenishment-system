@@ -6,7 +6,9 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/EPW80/replenishment-system/internal/auth"
 	"github.com/EPW80/replenishment-system/internal/domain"
+	"github.com/EPW80/replenishment-system/internal/schedule"
 	"github.com/EPW80/replenishment-system/internal/store"
 )
 
@@ -24,12 +26,12 @@ type TransitionHandler struct {
 // TransitionService is the state machine this handler drives. Declared as an interface
 // so handler tests do not need a database.
 type TransitionService interface {
-	Pause(ctx context.Context, scheduleID string, until *domain.Date, actor domain.EventActor) (domain.Schedule, error)
-	Resume(ctx context.Context, scheduleID string, actor domain.EventActor) (domain.Schedule, error)
-	SkipNext(ctx context.Context, scheduleID string, actor domain.EventActor) (domain.Schedule, error)
-	Defer(ctx context.Context, scheduleID string, days int, actor domain.EventActor) (domain.Schedule, error)
-	ChangeCadence(ctx context.Context, scheduleID string, intervalDays int, actor domain.EventActor) (domain.Schedule, error)
-	Cancel(ctx context.Context, scheduleID, reasonCode string, actor domain.EventActor) (domain.Schedule, error)
+	Pause(ctx context.Context, scheduleID string, until *domain.Date, caller schedule.Caller) (domain.Schedule, error)
+	Resume(ctx context.Context, scheduleID string, caller schedule.Caller) (domain.Schedule, error)
+	SkipNext(ctx context.Context, scheduleID string, caller schedule.Caller) (domain.Schedule, error)
+	Defer(ctx context.Context, scheduleID string, days int, caller schedule.Caller) (domain.Schedule, error)
+	ChangeCadence(ctx context.Context, scheduleID string, intervalDays int, caller schedule.Caller) (domain.Schedule, error)
+	Cancel(ctx context.Context, scheduleID, reasonCode string, caller schedule.Caller) (domain.Schedule, error)
 }
 
 // decode reads a JSON body that may legitimately be absent.
@@ -54,7 +56,7 @@ func decode(w http.ResponseWriter, r *http.Request, dst any) error {
 // was well-formed and the customer is allowed to make it — the schedule is simply in a
 // state that cannot accept it, and a client that retries identically after a pause
 // will succeed.
-func (h TransitionHandler) respond(w http.ResponseWriter, r *http.Request, s domain.Schedule, err error) {
+func (h TransitionHandler) respond(w http.ResponseWriter, r *http.Request, s domain.Schedule, err error, c schedule.Caller) {
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		writeError(w, http.StatusNotFound, "schedule not found")
@@ -69,7 +71,7 @@ func (h TransitionHandler) respond(w http.ResponseWriter, r *http.Request, s dom
 		return
 	}
 
-	items, err := h.Repo.ListScheduleItems(r.Context(), s.ID)
+	items, err := h.Repo.ListScheduleItems(r.Context(), s.ID, c.Scope)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not read schedule items")
 		return
@@ -77,13 +79,27 @@ func (h TransitionHandler) respond(w http.ResponseWriter, r *http.Request, s dom
 	writeJSON(w, http.StatusOK, ScheduleHandler{}.toResponse(s, items))
 }
 
-// actor records who caused a transition.
+// caller builds the verified identity a transition runs under.
 //
-// Every request that reaches this handler arrives through the portal's authenticated
-// proxy (spec §4), so the actor is the customer. Admin- and system-initiated
-// transitions do not come through here; when an admin surface lands in Phase 6 it will
-// pass its own actor rather than reusing this one.
-const actor = domain.ActorCustomer
+// This used to be a constant asserting every request came from a customer. It was true
+// of the traffic the service expected and false of the traffic it would accept: with no
+// authentication, anyone could send these requests and be recorded as the customer.
+// Both the actor in the audit log and the scope the transition may touch now come from
+// the verified credential.
+//
+// The false return means the route was wired without its middleware — a router bug, so
+// the handler answers 500 rather than guessing an identity.
+func caller(r *http.Request) (schedule.Caller, bool) {
+	principal, ok := auth.FromContext(r.Context())
+	if !ok {
+		return schedule.Caller{}, false
+	}
+	scope, ok := scopeFor(r)
+	if !ok {
+		return schedule.Caller{}, false
+	}
+	return schedule.Caller{Actor: principal.Actor(), Scope: scope}, true
+}
 
 type pauseRequest struct {
 	PausedUntil string `json:"paused_until"`
@@ -107,20 +123,38 @@ func (h TransitionHandler) Pause(w http.ResponseWriter, r *http.Request) {
 		until = &d
 	}
 
-	s, err := h.Service.Pause(r.Context(), r.PathValue("id"), until, actor)
-	h.respond(w, r, s, err)
+	c, ok := caller(r)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "could not update this schedule")
+		return
+	}
+
+	s, err := h.Service.Pause(r.Context(), r.PathValue("id"), until, c)
+	h.respond(w, r, s, err, c)
 }
 
 // Resume handles POST /schedules/{id}/resume.
 func (h TransitionHandler) Resume(w http.ResponseWriter, r *http.Request) {
-	s, err := h.Service.Resume(r.Context(), r.PathValue("id"), actor)
-	h.respond(w, r, s, err)
+	c, ok := caller(r)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "could not update this schedule")
+		return
+	}
+
+	s, err := h.Service.Resume(r.Context(), r.PathValue("id"), c)
+	h.respond(w, r, s, err, c)
 }
 
 // Skip handles POST /schedules/{id}/skip — skip the next order, keep the schedule.
 func (h TransitionHandler) Skip(w http.ResponseWriter, r *http.Request) {
-	s, err := h.Service.SkipNext(r.Context(), r.PathValue("id"), actor)
-	h.respond(w, r, s, err)
+	c, ok := caller(r)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "could not update this schedule")
+		return
+	}
+
+	s, err := h.Service.SkipNext(r.Context(), r.PathValue("id"), c)
+	h.respond(w, r, s, err, c)
 }
 
 type deferRequest struct {
@@ -139,8 +173,14 @@ func (h TransitionHandler) Defer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s, err := h.Service.Defer(r.Context(), r.PathValue("id"), req.Days, actor)
-	h.respond(w, r, s, err)
+	c, ok := caller(r)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "could not update this schedule")
+		return
+	}
+
+	s, err := h.Service.Defer(r.Context(), r.PathValue("id"), req.Days, c)
+	h.respond(w, r, s, err, c)
 }
 
 type cadenceRequest struct {
@@ -160,8 +200,14 @@ func (h TransitionHandler) Cadence(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s, err := h.Service.ChangeCadence(r.Context(), r.PathValue("id"), req.IntervalDays, actor)
-	h.respond(w, r, s, err)
+	c, ok := caller(r)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "could not update this schedule")
+		return
+	}
+
+	s, err := h.Service.ChangeCadence(r.Context(), r.PathValue("id"), req.IntervalDays, c)
+	h.respond(w, r, s, err, c)
 }
 
 type cancelRequest struct {
@@ -180,6 +226,12 @@ func (h TransitionHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s, err := h.Service.Cancel(r.Context(), r.PathValue("id"), req.ReasonCode, actor)
-	h.respond(w, r, s, err)
+	c, ok := caller(r)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "could not update this schedule")
+		return
+	}
+
+	s, err := h.Service.Cancel(r.Context(), r.PathValue("id"), req.ReasonCode, c)
+	h.respond(w, r, s, err, c)
 }

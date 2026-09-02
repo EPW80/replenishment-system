@@ -1,11 +1,25 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestLoad(t *testing.T) {
 	const validURL = "postgres://u:p@localhost:5432/db?sslmode=disable"
+	const validSecret = "a-test-secret-of-at-least-32-characters"
+
+	// setRequired supplies every variable Load insists on, so each subtest can vary
+	// the one thing it is actually about.
+	setRequired := func(t *testing.T) {
+		t.Helper()
+		t.Setenv("DATABASE_URL", validURL)
+		t.Setenv("PORTAL_JWT_SECRET", validSecret)
+		t.Setenv("SERVICE_API_KEY", validSecret)
+	}
 
 	t.Run("requires DATABASE_URL", func(t *testing.T) {
+		setRequired(t)
 		t.Setenv("DATABASE_URL", "")
 		if _, err := Load(); err == nil {
 			t.Fatal("expected an error when DATABASE_URL is unset; a service that silently starts against the wrong database is worse than one that refuses to start")
@@ -13,7 +27,7 @@ func TestLoad(t *testing.T) {
 	})
 
 	t.Run("applies defaults", func(t *testing.T) {
-		t.Setenv("DATABASE_URL", validURL)
+		setRequired(t)
 		c, err := Load()
 		if err != nil {
 			t.Fatalf("Load: %v", err)
@@ -39,7 +53,7 @@ func TestLoad(t *testing.T) {
 			{"horizon below one", "MATERIALIZE_HORIZON", "0"},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
-				t.Setenv("DATABASE_URL", validURL)
+				setRequired(t)
 				t.Setenv(tc.key, tc.value)
 				if _, err := Load(); err == nil {
 					t.Errorf("expected an error for %s=%q", tc.key, tc.value)
@@ -48,8 +62,52 @@ func TestLoad(t *testing.T) {
 		}
 	})
 
+	t.Run("requires the auth credentials", func(t *testing.T) {
+		// A service that starts without these serves every schedule to anyone who
+		// asks. Refusing to boot is the only safe default, so each one is checked
+		// missing and too-short.
+		for _, key := range []string{"PORTAL_JWT_SECRET", "SERVICE_API_KEY"} {
+			t.Run(key+" missing", func(t *testing.T) {
+				setRequired(t)
+				t.Setenv(key, "")
+				if _, err := Load(); err == nil {
+					t.Errorf("expected an error when %s is unset", key)
+				}
+			})
+			t.Run(key+" too short", func(t *testing.T) {
+				setRequired(t)
+				t.Setenv(key, "short")
+				if _, err := Load(); err == nil {
+					t.Errorf("expected an error when %s is below the minimum length", key)
+				}
+			})
+			t.Run(key+" value never appears in the error", func(t *testing.T) {
+				setRequired(t)
+				t.Setenv(key, "tooshort-but-secret")
+				_, err := Load()
+				if err == nil {
+					t.Fatalf("expected an error for a short %s", key)
+				}
+				if strings.Contains(err.Error(), "tooshort-but-secret") {
+					t.Errorf("%s value leaked into the error: %v", key, err)
+				}
+			})
+		}
+	})
+
+	t.Run("defaults the token issuer and audience", func(t *testing.T) {
+		setRequired(t)
+		c, err := Load()
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if c.PortalJWTIssuer != "cadenceos-portal" || c.PortalJWTAudience != "cadenceos" {
+			t.Errorf("issuer/audience = %q/%q", c.PortalJWTIssuer, c.PortalJWTAudience)
+		}
+	})
+
 	t.Run("reads overrides", func(t *testing.T) {
-		t.Setenv("DATABASE_URL", validURL)
+		setRequired(t)
 		t.Setenv("PORT", "9090")
 		t.Setenv("BUILD_SHA", "abc123")
 		t.Setenv("MATERIALIZE_HORIZON", "5")
