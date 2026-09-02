@@ -18,10 +18,19 @@ type Scope struct {
 	// restricted separates "no customer filter" from "a filter for the empty
 	// customer". Without it, CustomerScope("") would widen to every row — a bug that
 	// reads as a missing value but behaves as a privilege escalation. Restricted with
-	// an empty ID matches nothing instead, so the failure mode is denial.
+	// an empty ID denies everything instead, so the failure mode is denial.
 	restricted bool
 	customerID string
 }
+
+// denyAll is the predicate for a restricted scope with no customer to restrict to.
+//
+// Comparing customer_id against the empty string would not do: the column is NOT NULL
+// but nothing forbids a blank value, so that predicate *matches* any row whose
+// customer_id is blank rather than matching none. The one scope meant to be fail-closed
+// would become a key to exactly the rows nobody owns. Denial has to be a property of
+// the predicate, not of the data happening not to contain a blank.
+const denyAll = " AND false"
 
 // SystemScope returns an unrestricted scope, for background work that legitimately
 // spans customers.
@@ -38,6 +47,9 @@ func (s Scope) filterOwn(nextArg int) (string, []any) {
 	if !s.restricted {
 		return "", nil
 	}
+	if s.customerID == "" {
+		return denyAll, nil
+	}
 	return fmt.Sprintf(" AND customer_id = $%d", nextArg), []any{s.customerID}
 }
 
@@ -46,6 +58,9 @@ func (s Scope) filterOwn(nextArg int) (string, []any) {
 func (s Scope) filterVia(column string, nextArg int) (string, []any) {
 	if !s.restricted {
 		return "", nil
+	}
+	if s.customerID == "" {
+		return denyAll, nil
 	}
 	clause := fmt.Sprintf(
 		" AND %s IN (SELECT id FROM schedules WHERE customer_id = $%d)", column, nextArg)

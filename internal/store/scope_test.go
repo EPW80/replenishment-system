@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/EPW80/replenishment-system/internal/domain"
 	"github.com/EPW80/replenishment-system/internal/store"
 )
@@ -96,5 +98,46 @@ func TestEmptyCustomerScopeDeniesRatherThanWidens(t *testing.T) {
 
 	if _, err := repo.GetSchedule(ctx, s.ID, store.CustomerScope("")); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("err = %v, want ErrNotFound — an empty scope must match nothing", err)
+	}
+}
+
+// The empty scope must deny even against a row whose customer_id is itself empty.
+//
+// `customer_id` is NOT NULL but nothing forbids a blank value, so comparing it against
+// the empty string is a match rather than a denial — which would turn the one scope
+// meant to be fail-closed into a key for exactly the rows nobody owns. Denying has to
+// be a property of the predicate, not of the data happening not to contain a blank.
+func TestEmptyCustomerScopeDeniesEvenAnEmptyCustomerRow(t *testing.T) {
+	_, repo := newTestDB(t)
+	ctx := context.Background()
+
+	orphan := domain.Schedule{
+		ID:           uuid.NewString(),
+		CustomerID:   "",
+		Status:       domain.ScheduleActive,
+		IntervalDays: 30,
+		AnchorDate:   domain.NewDate(2026, time.March, 15),
+		Timezone:     "UTC",
+	}
+	if err := repo.CreateSchedule(ctx, orphan, []domain.ScheduleItem{
+		{ID: uuid.NewString(), ScheduleID: orphan.ID, SKU: "SKU-001", Quantity: 1},
+	}); err != nil {
+		t.Fatalf("create schedule with an empty customer_id: %v", err)
+	}
+
+	empty := store.CustomerScope("")
+
+	if _, err := repo.GetSchedule(ctx, orphan.ID, empty); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("GetSchedule err = %v, want ErrNotFound", err)
+	}
+	if items, err := repo.ListScheduleItems(ctx, orphan.ID, empty); err != nil {
+		t.Errorf("ListScheduleItems: %v", err)
+	} else if len(items) != 0 {
+		t.Errorf("got %d items under the empty scope, want 0", len(items))
+	}
+	if occ, err := repo.ListOccurrences(ctx, orphan.ID, empty); err != nil {
+		t.Errorf("ListOccurrences: %v", err)
+	} else if len(occ) != 0 {
+		t.Errorf("got %d occurrences under the empty scope, want 0", len(occ))
 	}
 }
