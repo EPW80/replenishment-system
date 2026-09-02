@@ -73,6 +73,17 @@ type Result struct {
 // One schedule's failure does not abort the run: a single bad schedule must not stop
 // every other customer's orders from being planned. Failures are logged and the run
 // continues, returning the first error once every schedule has been attempted.
+//
+// Each schedule is handled in its own transaction, which locks the row and re-reads it
+// before planning anything. The listing above is a snapshot, and this job runs for as
+// long as it takes to walk every active schedule — easily long enough for a customer
+// to pause one. Materializing from the snapshot would plant planned occurrences on a
+// schedule that is paused by the time they land, which is exactly the state Pause
+// exists to prevent: a paused schedule still showing upcoming orders reads to the
+// customer as one that is still going to charge them.
+//
+// One row at a time, so a transition waits on at most the single schedule the job is
+// currently holding rather than on the whole run.
 func (m *Materializer) RunAll(ctx context.Context, today domain.Date) (Result, error) {
 	schedules, err := m.repo.ListActiveSchedules(ctx)
 	if err != nil {
@@ -83,7 +94,24 @@ func (m *Materializer) RunAll(ctx context.Context, today domain.Date) (Result, e
 	var firstErr error
 	for _, s := range schedules {
 		res.SchedulesConsidered++
-		created, dupes, err := m.Run(ctx, s, today)
+
+		var created, dupes int
+		err := m.repo.InTx(ctx, func(tx store.Repository) error {
+			current, err := tx.GetScheduleForUpdate(ctx, s.ID, store.SystemScope())
+			if errors.Is(err, store.ErrNotFound) {
+				// Gone between the listing and the lock. Nothing to plan, and not an
+				// error worth failing the run over.
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			// Run against the locked row, not the snapshot: it re-checks IsActive, so a
+			// schedule paused in the meantime plans nothing.
+			created, dupes, err = m.WithRepo(tx).Run(ctx, current, today)
+			return err
+		})
+
 		res.OccurrencesCreated += created
 		res.DuplicatesSkipped += dupes
 		if err != nil {
