@@ -141,3 +141,39 @@ func TestEmptyCustomerScopeDeniesEvenAnEmptyCustomerRow(t *testing.T) {
 		t.Errorf("got %d occurrences under the empty scope, want 0", len(occ))
 	}
 }
+
+// GetScheduleForUpdate refuses to run outside a transaction.
+//
+// A FOR UPDATE in its own implicit transaction releases the lock as the statement
+// returns, so it would read as locking while guaranteeing nothing. Failing loudly is
+// what stops a future caller from adopting that false assurance and dropping the
+// transaction around a transition.
+func TestGetScheduleForUpdateRequiresATransaction(t *testing.T) {
+	_, repo := newTestDB(t)
+	ctx := context.Background()
+
+	s := newSchedule(t, repo, domain.NewDate(2026, time.March, 15), 30)
+
+	if _, err := repo.GetScheduleForUpdate(ctx, s.ID, store.SystemScope()); !errors.Is(err, store.ErrNoTransaction) {
+		t.Errorf("err = %v, want ErrNoTransaction outside a transaction", err)
+	}
+
+	// Inside one it behaves as a scoped read that happens to hold the row.
+	err := repo.InTx(ctx, func(tx store.Repository) error {
+		got, err := tx.GetScheduleForUpdate(ctx, s.ID, store.SystemScope())
+		if err != nil {
+			return err
+		}
+		if got.ID != s.ID {
+			t.Errorf("id = %s, want %s", got.ID, s.ID)
+		}
+		// The scope applies here too, or the lock would be a way around ownership.
+		if _, err := tx.GetScheduleForUpdate(ctx, s.ID, store.CustomerScope("someone-else")); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("another customer's scope: err = %v, want ErrNotFound", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("in tx: %v", err)
+	}
+}
