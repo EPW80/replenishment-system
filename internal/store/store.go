@@ -188,11 +188,11 @@ func (r *PostgresRepository) CreateSchedule(ctx context.Context, s domain.Schedu
 	return r.inTx(ctx, func(tx *PostgresRepository) error {
 		_, err := tx.conn.ExecContext(ctx, `
 			INSERT INTO schedules (
-				id, customer_id, status, interval_days, anchor_date, next_run_date,
+				id, customer_id, customer_email, status, interval_days, anchor_date, next_run_date,
 				timezone, payment_token_ref, shipping_address_id, discount_pct, paused_until,
 				origin_order_id
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-			s.ID, s.CustomerID, string(s.Status), s.IntervalDays, s.AnchorDate.ToTime(),
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+			s.ID, s.CustomerID, s.CustomerEmail, string(s.Status), s.IntervalDays, s.AnchorDate.ToTime(),
 			datePtr(s.NextRunDate), s.Timezone, nullStr(s.PaymentTokenRef),
 			nullStr(s.ShippingAddressID), s.DiscountPct, datePtr(s.PausedUntil), s.OriginOrderID)
 		if isUniqueViolation(err, "schedules_origin_order_id_unique") {
@@ -214,7 +214,7 @@ func (r *PostgresRepository) CreateSchedule(ctx context.Context, s domain.Schedu
 	})
 }
 
-const scheduleColumns = `id, customer_id, status, interval_days, anchor_date,
+const scheduleColumns = `id, customer_id, customer_email, status, interval_days, anchor_date,
 	next_run_date, timezone, coalesce(payment_token_ref,''),
 	coalesce(shipping_address_id,''), discount_pct, paused_until, origin_order_id,
 	created_at, updated_at`
@@ -226,7 +226,7 @@ func scanSchedule(row interface{ Scan(...any) error }) (domain.Schedule, error) 
 		anchor     time.Time
 		next, paus sql.NullTime
 	)
-	err := row.Scan(&s.ID, &s.CustomerID, &status, &s.IntervalDays, &anchor, &next,
+	err := row.Scan(&s.ID, &s.CustomerID, &s.CustomerEmail, &status, &s.IntervalDays, &anchor, &next,
 		&s.Timezone, &s.PaymentTokenRef, &s.ShippingAddressID, &s.DiscountPct, &paus,
 		&s.OriginOrderID, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {

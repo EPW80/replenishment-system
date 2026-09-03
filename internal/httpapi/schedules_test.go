@@ -101,6 +101,7 @@ func TestCreateAndGetSchedule(t *testing.T) {
 
 	body := `{
 		"customer_id": "` + customer + `",
+		"customer_email": "` + customer + `@example.com",
 		"origin_order_id": "order_` + uuid.NewString() + `",
 		"interval_days": 30,
 		"anchor_date": "2026-01-01",
@@ -135,6 +136,10 @@ func TestCreateAndGetSchedule(t *testing.T) {
 	if strings.Contains(rec.Body.String(), "tok_abc123") {
 		t.Error("payment_token_ref leaked into the response")
 	}
+	// Neither must the email address -- write-only, the same as payment_token_ref.
+	if strings.Contains(rec.Body.String(), "@example.com") {
+		t.Error("customer_email leaked into the response")
+	}
 
 	get := do(t, h, http.MethodGet, "/schedules/"+id, "", customerCred(t, customer))
 	if get.Code != http.StatusOK {
@@ -157,6 +162,7 @@ func TestCreateScheduleIsIdempotentPerOriginOrder(t *testing.T) {
 
 	body := `{
 		"customer_id": "` + customer + `",
+		"customer_email": "` + customer + `@example.com",
 		"origin_order_id": "` + origin + `",
 		"interval_days": 30,
 		"anchor_date": "2026-01-01",
@@ -203,6 +209,7 @@ func TestCreateScheduleValidation(t *testing.T) {
 
 	valid := map[string]any{
 		"customer_id":     "cust_1",
+		"customer_email":  "cust_1@example.com",
 		"origin_order_id": "order_" + uuid.NewString(),
 		"interval_days":   30,
 		"anchor_date":     "2026-01-01",
@@ -215,6 +222,8 @@ func TestCreateScheduleValidation(t *testing.T) {
 		patch func(map[string]any)
 	}{
 		{"missing customer_id", func(m map[string]any) { delete(m, "customer_id") }},
+		{"missing customer_email", func(m map[string]any) { delete(m, "customer_email") }},
+		{"malformed customer_email", func(m map[string]any) { m["customer_email"] = "not-an-email" }},
 		{"missing origin_order_id", func(m map[string]any) { delete(m, "origin_order_id") }},
 		{"interval below spec minimum", func(m map[string]any) { m["interval_days"] = 6 }},
 		{"interval above spec maximum", func(m map[string]any) { m["interval_days"] = 181 }},
@@ -248,7 +257,8 @@ func TestCreateScheduleRejectsUnknownFields(t *testing.T) {
 	h, _, _ := newAPI(t)
 
 	body := `{
-		"customer_id": "c1", "interval_days": 30, "anchor_date": "2026-01-01",
+		"customer_id": "c1", "customer_email": "c1@example.com",
+		"interval_days": 30, "anchor_date": "2026-01-01",
 		"timezone": "UTC", "items": [{"sku":"S","quantity":1}],
 		"doses_per_day": 2
 	}`
@@ -277,7 +287,8 @@ func TestUpcomingQueueCarriesNoConsumptionFields(t *testing.T) {
 	h, _, _ := newAPI(t)
 	customer := "cust_" + uuid.NewString()[:8]
 
-	body := `{"customer_id":"` + customer + `","origin_order_id":"order_` + uuid.NewString() + `",
+	body := `{"customer_id":"` + customer + `","customer_email":"` + customer + `@example.com",
+		"origin_order_id":"order_` + uuid.NewString() + `",
 		"interval_days":30,"anchor_date":"2026-01-01",
 		"timezone":"UTC","items":[{"sku":"SKU-001","quantity":1}]}`
 	rec := do(t, h, http.MethodPost, "/schedules", body, serviceCred())
@@ -313,7 +324,8 @@ func TestListSchedulesByCustomer(t *testing.T) {
 		// Two distinct checkouts for the same customer -- each needs its own
 		// origin_order_id, or the second POST would be treated as a retry of the
 		// first and return the existing schedule instead of creating a new one.
-		body := `{"customer_id":"` + customer + `","origin_order_id":"order_` + uuid.NewString() + `",
+		body := `{"customer_id":"` + customer + `","customer_email":"` + customer + `@example.com",
+			"origin_order_id":"order_` + uuid.NewString() + `",
 			"interval_days":30,"anchor_date":"2026-01-01",
 			"timezone":"UTC","items":[{"sku":"` + sku + `","quantity":1}]}`
 		if rec := do(t, h, http.MethodPost, "/schedules", body, serviceCred()); rec.Code != http.StatusCreated {

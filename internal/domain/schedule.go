@@ -45,6 +45,11 @@ type Schedule struct {
 	CustomerID string // WooCommerce customer ID
 	Status     ScheduleStatus
 
+	// CustomerEmail is where Phase 4's transactional notifications go (spec §7).
+	// Write-only in every API response, the same way PaymentTokenRef is: accepted on
+	// create, never echoed back.
+	CustomerEmail string
+
 	// OriginOrderID is the WooCommerce order ID from the checkout that established
 	// this subscription. UNIQUE: it is schedule creation's idempotency key, the same
 	// role occurrences.idempotency_key plays for a single occurrence. Submitting the
