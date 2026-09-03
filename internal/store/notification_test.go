@@ -2,11 +2,13 @@ package store_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/EPW80/replenishment-system/internal/domain"
+	"github.com/EPW80/replenishment-system/internal/store"
 )
 
 var notifiableTypes = []string{domain.EventScheduleCreated}
@@ -199,6 +201,30 @@ func TestClaimNotifiableEventsFiltersByEventType(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Errorf("claimed %+v for an event type not in the requested set", got)
+	}
+}
+
+// Marking a row that was never claimed (or was claimed for a schedule_event_id that
+// does not exist) must report ErrNotFound, the same convention every other mutating
+// Repository method uses (checkAffected) -- a silent no-op here would let cmd/notify
+// believe it recorded an outcome that never actually landed.
+func TestMarkNotificationSentOnUnknownRowReturnsErrNotFound(t *testing.T) {
+	_, repo := newTestDB(t)
+	ctx := context.Background()
+
+	err := repo.MarkNotificationSent(ctx, 999999, time.Now())
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestMarkNotificationFailedOnUnknownRowReturnsErrNotFound(t *testing.T) {
+	_, repo := newTestDB(t)
+	ctx := context.Background()
+
+	err := repo.MarkNotificationFailed(ctx, 999999, "some error", 5)
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound", err)
 	}
 }
 
