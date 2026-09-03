@@ -1,0 +1,7 @@
+{{define "subject"}}Your recurring order has resumed{{end}}
+{{define "body"}}
+<p>Your recurring order is active again, on a {{.IntervalDays}}-day cadence starting
+from {{.AnchorDate}}.</p>
+{{if .NextOrderDate}}<p>Your next order is scheduled for {{.NextOrderDate}}.</p>{{end}}
+<p>Questions? Contact {{.SupportContact}}.</p>
+{{end}}
