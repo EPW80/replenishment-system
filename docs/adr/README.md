@@ -16,6 +16,7 @@ costs), and Status.
 | [0005](0005-compliance-boundary-enforcement.md) | Enforce the §2 compliance boundary with a build-failing guard | Accepted |
 | [0006](0006-portal-jwt-and-service-credential-auth.md) | Portal JWT for customers, a separate service credential for checkout | Accepted |
 | [0007](0007-row-locking-for-transitions.md) | Serialize transitions with a row lock rather than optimistic retry | Accepted |
+| [0008](0008-origin-order-id-idempotency-for-schedule-creation.md) | `origin_order_id` as schedule creation's idempotency key | Accepted |
 
 **"Provisional"** marks a decision taken without access to PartnerOS. The spec (§4)
 directs reuse of whatever PartnerOS settled on rather than introducing a second

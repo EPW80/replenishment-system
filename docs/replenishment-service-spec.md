@@ -67,6 +67,7 @@ Schedule         1 ─── n  ScheduleEvent     (append-only audit log)
 |---|---|---|
 | `id` | uuid | |
 | `customer_id` | text | WooCommerce customer ID |
+| `origin_order_id` | text | WooCommerce order from the founding checkout — unique, this creation's idempotency key |
 | `status` | enum | `active`, `paused`, `canceled`, `failed` |
 | `interval_days` | int | 7–180, validated |
 | `anchor_date` | date | schedule origin, for drift-free calculation |
@@ -79,6 +80,8 @@ Schedule         1 ─── n  ScheduleEvent     (append-only audit log)
 | `created_at` / `updated_at` | timestamptz | |
 
 `next_run_date` is always recomputed from `anchor_date + (n × interval_days)`, never from `last_run + interval`. Incremental addition accumulates drift across skips, deferrals, and retries; anchor-relative computation does not.
+
+`origin_order_id` is schedule creation's idempotency key, the same role `idempotency_key` plays for an occurrence below: a retried `POST /schedules` (a timeout, a duplicate webhook delivery, a redeployment mid-request) must never create a second, independent schedule for the same checkout. Same key twice returns the existing schedule. See docs/adr/0008.
 
 ### Occurrence
 

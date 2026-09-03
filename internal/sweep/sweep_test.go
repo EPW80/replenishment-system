@@ -43,12 +43,13 @@ func at(repo *store.PostgresRepository, now time.Time) (*schedule.Service, *swee
 func newActiveSchedule(t *testing.T, repo *store.PostgresRepository, tz string) domain.Schedule {
 	t.Helper()
 	s := domain.Schedule{
-		ID:           uuid.NewString(),
-		CustomerID:   "cust_" + uuid.NewString()[:8],
-		Status:       domain.ScheduleActive,
-		IntervalDays: 30,
-		AnchorDate:   domain.NewDate(2026, time.January, 1),
-		Timezone:     tz,
+		ID:            uuid.NewString(),
+		CustomerID:    "cust_" + uuid.NewString()[:8],
+		OriginOrderID: "order_" + uuid.NewString(),
+		Status:        domain.ScheduleActive,
+		IntervalDays:  30,
+		AnchorDate:    domain.NewDate(2026, time.January, 1),
+		Timezone:      tz,
 	}
 	if err := repo.CreateSchedule(context.Background(), s, []domain.ScheduleItem{{
 		ID: uuid.NewString(), ScheduleID: s.ID, SKU: "SKU-A", Quantity: 1,

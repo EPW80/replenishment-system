@@ -45,6 +45,13 @@ type Schedule struct {
 	CustomerID string // WooCommerce customer ID
 	Status     ScheduleStatus
 
+	// OriginOrderID is the WooCommerce order ID from the checkout that established
+	// this subscription. UNIQUE: it is schedule creation's idempotency key, the same
+	// role occurrences.idempotency_key plays for a single occurrence. Submitting the
+	// same origin_order_id twice must return the existing schedule, never create a
+	// second one.
+	OriginOrderID string
+
 	IntervalDays int
 
 	// AnchorDate is the schedule origin. Occurrence dates derive from it, never

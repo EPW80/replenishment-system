@@ -28,6 +28,13 @@ var ErrNotFound = errors.New("not found")
 // with a new key".
 var ErrDuplicateOccurrence = errors.New("occurrence already exists for this idempotency key")
 
+// ErrDuplicateSchedule is returned when a schedule with the same origin_order_id
+// already exists.
+//
+// Same shape as ErrDuplicateOccurrence: a retried POST /schedules is "already done",
+// not "try again with a new key". Callers look up and return the existing schedule.
+var ErrDuplicateSchedule = errors.New("schedule already exists for this origin order")
+
 // Repository is the persistence interface the rest of the service depends on.
 //
 // Note there is no UpdateEvent or DeleteEvent. The event log is append-only by
@@ -35,6 +42,12 @@ var ErrDuplicateOccurrence = errors.New("occurrence already exists for this idem
 type Repository interface {
 	CreateSchedule(ctx context.Context, s domain.Schedule, items []domain.ScheduleItem) error
 	GetSchedule(ctx context.Context, id string, scope Scope) (domain.Schedule, error)
+
+	// GetScheduleByOriginOrderID looks up a schedule by the checkout it originated
+	// from. It is unscoped: it backs POST /schedules' idempotent-retry path, which
+	// runs on the service credential rather than a customer token, and
+	// origin_order_id is unique regardless of customer.
+	GetScheduleByOriginOrderID(ctx context.Context, originOrderID string) (domain.Schedule, error)
 
 	// GetScheduleForUpdate reads a schedule and holds its row until the surrounding
 	// transaction ends. It is the serialization point for everything that changes a
@@ -152,6 +165,12 @@ func isUniqueViolation(err error, constraint string) bool {
 	return strings.Contains(msg, "SQLSTATE 23505") && strings.Contains(msg, constraint)
 }
 
+// CreateSchedule inserts one schedule and its items.
+//
+// A duplicate origin_order_id returns ErrDuplicateSchedule rather than a generic
+// error, because the caller's correct response is to look up and return the schedule
+// that already exists — never to retry with a different origin_order_id, which would
+// defeat the point.
 func (r *PostgresRepository) CreateSchedule(ctx context.Context, s domain.Schedule, items []domain.ScheduleItem) error {
 	if err := domain.ValidateInterval(s.IntervalDays); err != nil {
 		return err
@@ -164,11 +183,15 @@ func (r *PostgresRepository) CreateSchedule(ctx context.Context, s domain.Schedu
 		_, err := tx.conn.ExecContext(ctx, `
 			INSERT INTO schedules (
 				id, customer_id, status, interval_days, anchor_date, next_run_date,
-				timezone, payment_token_ref, shipping_address_id, discount_pct, paused_until
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+				timezone, payment_token_ref, shipping_address_id, discount_pct, paused_until,
+				origin_order_id
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
 			s.ID, s.CustomerID, string(s.Status), s.IntervalDays, s.AnchorDate.ToTime(),
 			datePtr(s.NextRunDate), s.Timezone, nullStr(s.PaymentTokenRef),
-			nullStr(s.ShippingAddressID), s.DiscountPct, datePtr(s.PausedUntil))
+			nullStr(s.ShippingAddressID), s.DiscountPct, datePtr(s.PausedUntil), s.OriginOrderID)
+		if isUniqueViolation(err, "schedules_origin_order_id_unique") {
+			return ErrDuplicateSchedule
+		}
 		if err != nil {
 			return fmt.Errorf("insert schedule: %w", err)
 		}
@@ -187,7 +210,8 @@ func (r *PostgresRepository) CreateSchedule(ctx context.Context, s domain.Schedu
 
 const scheduleColumns = `id, customer_id, status, interval_days, anchor_date,
 	next_run_date, timezone, coalesce(payment_token_ref,''),
-	coalesce(shipping_address_id,''), discount_pct, paused_until, created_at, updated_at`
+	coalesce(shipping_address_id,''), discount_pct, paused_until, origin_order_id,
+	created_at, updated_at`
 
 func scanSchedule(row interface{ Scan(...any) error }) (domain.Schedule, error) {
 	var (
@@ -198,7 +222,7 @@ func scanSchedule(row interface{ Scan(...any) error }) (domain.Schedule, error) 
 	)
 	err := row.Scan(&s.ID, &s.CustomerID, &status, &s.IntervalDays, &anchor, &next,
 		&s.Timezone, &s.PaymentTokenRef, &s.ShippingAddressID, &s.DiscountPct, &paus,
-		&s.CreatedAt, &s.UpdatedAt)
+		&s.OriginOrderID, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return domain.Schedule{}, err
 	}
@@ -232,6 +256,21 @@ func (r *PostgresRepository) GetSchedule(ctx context.Context, id string, scope S
 	}
 	if err != nil {
 		return domain.Schedule{}, fmt.Errorf("get schedule: %w", err)
+	}
+	return s, nil
+}
+
+// GetScheduleByOriginOrderID reads the schedule for a checkout, unscoped (see the
+// Repository interface doc).
+func (r *PostgresRepository) GetScheduleByOriginOrderID(ctx context.Context, originOrderID string) (domain.Schedule, error) {
+	row := r.conn.QueryRowContext(ctx,
+		`SELECT `+scheduleColumns+` FROM schedules WHERE origin_order_id = $1`, originOrderID)
+	s, err := scanSchedule(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Schedule{}, ErrNotFound
+	}
+	if err != nil {
+		return domain.Schedule{}, fmt.Errorf("get schedule by origin order id: %w", err)
 	}
 	return s, nil
 }

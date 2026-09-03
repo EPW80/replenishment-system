@@ -101,6 +101,7 @@ func TestCreateAndGetSchedule(t *testing.T) {
 
 	body := `{
 		"customer_id": "` + customer + `",
+		"origin_order_id": "order_` + uuid.NewString() + `",
 		"interval_days": 30,
 		"anchor_date": "2026-01-01",
 		"timezone": "America/Los_Angeles",
@@ -146,15 +147,67 @@ func TestCreateAndGetSchedule(t *testing.T) {
 	}
 }
 
+// A retried POST /schedules — the same checkout's request arriving twice because of a
+// client timeout or a duplicate webhook delivery — must return the schedule that
+// already exists, 200 rather than 201, instead of creating a second independent one.
+func TestCreateScheduleIsIdempotentPerOriginOrder(t *testing.T) {
+	h, _, _ := newAPI(t)
+	customer := "cust_" + uuid.NewString()[:8]
+	origin := "order_" + uuid.NewString()
+
+	body := `{
+		"customer_id": "` + customer + `",
+		"origin_order_id": "` + origin + `",
+		"interval_days": 30,
+		"anchor_date": "2026-01-01",
+		"timezone": "UTC",
+		"items": [{"sku": "SKU-001", "quantity": 1}]
+	}`
+
+	first := do(t, h, http.MethodPost, "/schedules", body, serviceCred())
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first create: status = %d, body = %s", first.Code, first.Body.String())
+	}
+	var firstCreated map[string]any
+	if err := json.Unmarshal(first.Body.Bytes(), &firstCreated); err != nil {
+		t.Fatalf("decode first: %v", err)
+	}
+
+	retry := do(t, h, http.MethodPost, "/schedules", body, serviceCred())
+	if retry.Code != http.StatusOK {
+		t.Fatalf("retry: status = %d, want 200, body = %s", retry.Code, retry.Body.String())
+	}
+	var retryCreated map[string]any
+	if err := json.Unmarshal(retry.Body.Bytes(), &retryCreated); err != nil {
+		t.Fatalf("decode retry: %v", err)
+	}
+	if retryCreated["id"] != firstCreated["id"] {
+		t.Errorf("retry returned schedule %v, want the original %v", retryCreated["id"], firstCreated["id"])
+	}
+
+	list := do(t, h, http.MethodGet, "/customers/"+customer+"/schedules", "", customerCred(t, customer))
+	if list.Code != http.StatusOK {
+		t.Fatalf("list status = %d", list.Code)
+	}
+	var out struct {
+		Schedules []map[string]any `json:"schedules"`
+	}
+	_ = json.Unmarshal(list.Body.Bytes(), &out)
+	if len(out.Schedules) != 1 {
+		t.Errorf("got %d schedules for one checkout retried once, want 1", len(out.Schedules))
+	}
+}
+
 func TestCreateScheduleValidation(t *testing.T) {
 	h, _, _ := newAPI(t)
 
 	valid := map[string]any{
-		"customer_id":   "cust_1",
-		"interval_days": 30,
-		"anchor_date":   "2026-01-01",
-		"timezone":      "UTC",
-		"items":         []map[string]any{{"sku": "SKU-001", "quantity": 1}},
+		"customer_id":     "cust_1",
+		"origin_order_id": "order_" + uuid.NewString(),
+		"interval_days":   30,
+		"anchor_date":     "2026-01-01",
+		"timezone":        "UTC",
+		"items":           []map[string]any{{"sku": "SKU-001", "quantity": 1}},
 	}
 
 	for _, tc := range []struct {
@@ -162,6 +215,7 @@ func TestCreateScheduleValidation(t *testing.T) {
 		patch func(map[string]any)
 	}{
 		{"missing customer_id", func(m map[string]any) { delete(m, "customer_id") }},
+		{"missing origin_order_id", func(m map[string]any) { delete(m, "origin_order_id") }},
 		{"interval below spec minimum", func(m map[string]any) { m["interval_days"] = 6 }},
 		{"interval above spec maximum", func(m map[string]any) { m["interval_days"] = 181 }},
 		{"malformed anchor_date", func(m map[string]any) { m["anchor_date"] = "01/01/2026" }},
@@ -223,7 +277,8 @@ func TestUpcomingQueueCarriesNoConsumptionFields(t *testing.T) {
 	h, _, _ := newAPI(t)
 	customer := "cust_" + uuid.NewString()[:8]
 
-	body := `{"customer_id":"` + customer + `","interval_days":30,"anchor_date":"2026-01-01",
+	body := `{"customer_id":"` + customer + `","origin_order_id":"order_` + uuid.NewString() + `",
+		"interval_days":30,"anchor_date":"2026-01-01",
 		"timezone":"UTC","items":[{"sku":"SKU-001","quantity":1}]}`
 	rec := do(t, h, http.MethodPost, "/schedules", body, serviceCred())
 	if rec.Code != http.StatusCreated {
@@ -255,7 +310,11 @@ func TestListSchedulesByCustomer(t *testing.T) {
 	customer := "cust_" + uuid.NewString()[:8]
 
 	for _, sku := range []string{"SKU-001", "SKU-002"} {
-		body := `{"customer_id":"` + customer + `","interval_days":30,"anchor_date":"2026-01-01",
+		// Two distinct checkouts for the same customer -- each needs its own
+		// origin_order_id, or the second POST would be treated as a retry of the
+		// first and return the existing schedule instead of creating a new one.
+		body := `{"customer_id":"` + customer + `","origin_order_id":"order_` + uuid.NewString() + `",
+			"interval_days":30,"anchor_date":"2026-01-01",
 			"timezone":"UTC","items":[{"sku":"` + sku + `","quantity":1}]}`
 		if rec := do(t, h, http.MethodPost, "/schedules", body, serviceCred()); rec.Code != http.StatusCreated {
 			t.Fatalf("create %s: %s", sku, rec.Body.String())

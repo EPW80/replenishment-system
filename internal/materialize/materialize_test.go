@@ -22,12 +22,13 @@ func setup(t *testing.T) (*sql.DB, *store.PostgresRepository) {
 func newSchedule(t *testing.T, _ *sql.DB, repo *store.PostgresRepository, anchor domain.Date, interval int) domain.Schedule {
 	t.Helper()
 	s := domain.Schedule{
-		ID:           uuid.NewString(),
-		CustomerID:   "cust_" + uuid.NewString()[:8],
-		Status:       domain.ScheduleActive,
-		IntervalDays: interval,
-		AnchorDate:   anchor,
-		Timezone:     "America/Los_Angeles",
+		ID:            uuid.NewString(),
+		CustomerID:    "cust_" + uuid.NewString()[:8],
+		OriginOrderID: "order_" + uuid.NewString(),
+		Status:        domain.ScheduleActive,
+		IntervalDays:  interval,
+		AnchorDate:    anchor,
+		Timezone:      "America/Los_Angeles",
 	}
 	if err := repo.CreateSchedule(context.Background(), s, nil); err != nil {
 		t.Fatalf("create schedule: %v", err)
