@@ -13,8 +13,10 @@
 -- other four transitions have no retry-ambiguity to guard against (a retried pause,
 -- resume, cancel or cadence change already fails its precondition safely, since it
 -- acts on the schedule's own status rather than resolving a target occurrence), so
--- they carry no key. Multiple NULLs are unconstrained under a UNIQUE index by
--- Postgres's own semantics, so this needs no partial predicate to allow them.
+-- they carry no key. Postgres's own semantics already let multiple NULLs coexist under
+-- a plain UNIQUE index -- the WHERE clause below isn't needed for that. It's there so
+-- the index only ever indexes rows that carry a real key, keeping it smaller than one
+-- covering every schedule_events row regardless of event type.
 --
 -- The index is scoped to (schedule_id, event_type, idempotency_key) rather than to
 -- idempotency_key alone: two different schedules' customers could hand their own
