@@ -206,9 +206,26 @@ func (svc *Service) Resume(ctx context.Context, scheduleID string, caller Caller
 // Only that occurrence changes. Every later one keeps its date, because dates derive
 // from the anchor rather than from the occurrence before them — skipping one shipment
 // does not slide the rest of the schedule.
-func (svc *Service) SkipNext(ctx context.Context, scheduleID string, caller Caller) (domain.Schedule, error) {
+func (svc *Service) SkipNext(ctx context.Context, scheduleID, idempotencyKey string, caller Caller) (domain.Schedule, error) {
+	if err := domain.ValidateIdempotencyKey(idempotencyKey); err != nil {
+		return domain.Schedule{}, err
+	}
+
 	return svc.transition(ctx, scheduleID, domain.ActionSkipNext, caller,
 		func(tx store.Repository, s domain.Schedule) error {
+			// Checked before resolving a target at all. "Next actionable" is not
+			// stable across a retry — the first call's skip is exactly what changes
+			// which occurrence is next — so a retry that gets this far would skip a
+			// second, different occurrence. A prior event under this key means the
+			// customer's one request already happened; do nothing further.
+			done, err := tx.EventExistsWithKey(ctx, s.ID, domain.EventOccurrenceSkipped, idempotencyKey)
+			if err != nil {
+				return err
+			}
+			if done {
+				return nil
+			}
+
 			// Chosen under the same lock that will move it. Picking the target before
 			// the lock would let a concurrent skip take the same occurrence, and the
 			// second write would silently skip an order the customer never asked to.
@@ -222,9 +239,10 @@ func (svc *Service) SkipNext(ctx context.Context, scheduleID string, caller Call
 				return err
 			}
 			if err := tx.AppendEvent(ctx, domain.ScheduleEvent{
-				ScheduleID: s.ID,
-				EventType:  domain.EventOccurrenceSkipped,
-				Actor:      caller.Actor,
+				ScheduleID:     s.ID,
+				EventType:      domain.EventOccurrenceSkipped,
+				Actor:          caller.Actor,
+				IdempotencyKey: &idempotencyKey,
 				Payload: payload(map[string]any{
 					"sequence_no":   occ.SequenceNo,
 					"scheduled_for": occ.ScheduledFor.String(),
@@ -244,15 +262,29 @@ func (svc *Service) SkipNext(ctx context.Context, scheduleID string, caller Call
 // The anchor does not move. That is the deliberate choice in spec §6: a customer who
 // pushes one shipment a week out returns to their normal rhythm afterward rather than
 // permanently sliding.
-func (svc *Service) Defer(ctx context.Context, scheduleID string, days int, caller Caller) (domain.Schedule, error) {
+func (svc *Service) Defer(ctx context.Context, scheduleID string, days int, idempotencyKey string, caller Caller) (domain.Schedule, error) {
 	// Checked before the transaction opens: a request that cannot succeed should not
 	// take a lock other callers are waiting on.
 	if err := domain.ValidateDeferDays(days); err != nil {
 		return domain.Schedule{}, err
 	}
+	if err := domain.ValidateIdempotencyKey(idempotencyKey); err != nil {
+		return domain.Schedule{}, err
+	}
 
 	return svc.transition(ctx, scheduleID, domain.ActionDefer, caller,
 		func(tx store.Repository, s domain.Schedule) error {
+			// See SkipNext: a retry that reached nextOccurrence could shift a second,
+			// different occurrence, or shift the same one a second time if it is still
+			// soonest after the first shift. Neither is what the customer asked for.
+			done, err := tx.EventExistsWithKey(ctx, s.ID, domain.EventOccurrenceDeferred, idempotencyKey)
+			if err != nil {
+				return err
+			}
+			if done {
+				return nil
+			}
+
 			occ, err := svc.nextOccurrence(ctx, tx, s, domain.ActionDefer,
 				"there is no upcoming order to move")
 			if err != nil {
@@ -266,9 +298,10 @@ func (svc *Service) Defer(ctx context.Context, scheduleID string, days int, call
 				return err
 			}
 			if err := tx.AppendEvent(ctx, domain.ScheduleEvent{
-				ScheduleID: s.ID,
-				EventType:  domain.EventOccurrenceDeferred,
-				Actor:      caller.Actor,
+				ScheduleID:     s.ID,
+				EventType:      domain.EventOccurrenceDeferred,
+				Actor:          caller.Actor,
+				IdempotencyKey: &idempotencyKey,
 				Payload: payload(map[string]any{
 					"sequence_no": occ.SequenceNo,
 					"from":        from.String(),

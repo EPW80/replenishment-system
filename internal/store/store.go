@@ -85,6 +85,12 @@ type Repository interface {
 	AppendEvent(ctx context.Context, e domain.ScheduleEvent) error
 	ListEvents(ctx context.Context, scheduleID string) ([]domain.ScheduleEvent, error)
 
+	// EventExistsWithKey reports whether an event of eventType already carries this
+	// idempotency key for this schedule. SkipNext and Defer check it before resolving
+	// a target occurrence, so a retry never resolves a different one than the first
+	// call did (docs/adr/0009).
+	EventExistsWithKey(ctx context.Context, scheduleID, eventType, idempotencyKey string) (bool, error)
+
 	// Spec §6 transitions. Each mutates state that the event log must agree with,
 	// so callers run them inside InTx together with their AppendEvent.
 	UpdateScheduleStatus(ctx context.Context, scheduleID string, status domain.ScheduleStatus, pausedUntil *domain.Date) error
@@ -492,18 +498,37 @@ func (r *PostgresRepository) AppendEvent(ctx context.Context, e domain.ScheduleE
 		payload = []byte("{}")
 	}
 	_, err := r.conn.ExecContext(ctx, `
-		INSERT INTO schedule_events (schedule_id, event_type, actor, reason_code, payload)
-		VALUES ($1,$2,$3,$4,$5)`,
-		e.ScheduleID, e.EventType, string(e.Actor), e.ReasonCode, payload)
+		INSERT INTO schedule_events (schedule_id, event_type, actor, reason_code, payload, idempotency_key)
+		VALUES ($1,$2,$3,$4,$5,$6)`,
+		e.ScheduleID, e.EventType, string(e.Actor), e.ReasonCode, payload, e.IdempotencyKey)
 	if err != nil {
 		return fmt.Errorf("append event: %w", err)
 	}
 	return nil
 }
 
+// EventExistsWithKey reports whether (schedule_id, event_type, idempotency_key) has
+// already been recorded.
+//
+// The row lock SkipNext and Defer hold on the schedule is what makes this check safe
+// to act on: nothing else can be appending a competing event for this schedule between
+// this read and the mutation that follows it.
+func (r *PostgresRepository) EventExistsWithKey(ctx context.Context, scheduleID, eventType, idempotencyKey string) (bool, error) {
+	var exists bool
+	err := r.conn.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM schedule_events
+			WHERE schedule_id = $1 AND event_type = $2 AND idempotency_key = $3
+		)`, scheduleID, eventType, idempotencyKey).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check idempotency key: %w", err)
+	}
+	return exists, nil
+}
+
 func (r *PostgresRepository) ListEvents(ctx context.Context, scheduleID string) ([]domain.ScheduleEvent, error) {
 	rows, err := r.conn.QueryContext(ctx, `
-		SELECT id, schedule_id, event_type, actor, reason_code, payload, created_at
+		SELECT id, schedule_id, event_type, actor, reason_code, payload, idempotency_key, created_at
 		FROM schedule_events WHERE schedule_id = $1 ORDER BY id`, scheduleID)
 	if err != nil {
 		return nil, fmt.Errorf("query events: %w", err)
@@ -516,15 +541,20 @@ func (r *PostgresRepository) ListEvents(ctx context.Context, scheduleID string) 
 			e      domain.ScheduleEvent
 			actor  string
 			reason sql.NullString
+			key    sql.NullString
 		)
 		if err := rows.Scan(&e.ID, &e.ScheduleID, &e.EventType, &actor, &reason,
-			&e.Payload, &e.CreatedAt); err != nil {
+			&e.Payload, &key, &e.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan event: %w", err)
 		}
 		e.Actor = domain.EventActor(actor)
 		if reason.Valid {
 			v := reason.String
 			e.ReasonCode = &v
+		}
+		if key.Valid {
+			v := key.String
+			e.IdempotencyKey = &v
 		}
 		out = append(out, e)
 	}

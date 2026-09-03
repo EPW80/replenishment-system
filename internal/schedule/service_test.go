@@ -20,6 +20,10 @@ import (
 // behaviour rather than about who may perform it. Ownership scoping has its own tests.
 var anyCaller = schedule.Caller{Actor: domain.ActorCustomer, Scope: store.SystemScope()}
 
+// anyKey is the retry key for tests that call SkipNext or Defer exactly once per
+// schedule and are not testing idempotency itself.
+const anyKey = "test-key"
+
 // The clock is fixed so every expected date in this file is arithmetic, not a
 // function of when the suite runs.
 var fixedNow = time.Date(2026, time.January, 15, 12, 0, 0, 0, time.UTC)
@@ -234,7 +238,7 @@ func TestSkipNextLeavesLaterOrdersOnTheirDates(t *testing.T) {
 		survivors[o.SequenceNo] = o.ScheduledFor
 	}
 
-	if _, err := svc.SkipNext(ctx, s.ID, anyCaller); err != nil {
+	if _, err := svc.SkipNext(ctx, s.ID, anyKey, anyCaller); err != nil {
 		t.Fatalf("skip: %v", err)
 	}
 
@@ -275,7 +279,7 @@ func TestDeferMovesOnlyTheNextOrder(t *testing.T) {
 	before := occurrences(t, repo, s.ID)
 	target, following := before[0], before[1]
 
-	got, err := svc.Defer(ctx, s.ID, 7, anyCaller)
+	got, err := svc.Defer(ctx, s.ID, 7, anyKey, anyCaller)
 	if err != nil {
 		t.Fatalf("defer: %v", err)
 	}
@@ -303,9 +307,115 @@ func TestDeferRejectsOutOfRangeDays(t *testing.T) {
 	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
 
 	for _, days := range []int{0, -3, domain.MaxDeferDays + 1} {
-		if _, err := svc.Defer(context.Background(), s.ID, days, anyCaller); err == nil {
+		if _, err := svc.Defer(context.Background(), s.ID, days, anyKey, anyCaller); err == nil {
 			t.Errorf("defer of %d days was accepted", days)
 		}
+	}
+}
+
+// A retried SkipNext with the same idempotency key must not skip a second occurrence.
+// "Next actionable" changes as soon as the first call resolves it, so a target chosen
+// again on replay would be a different, later order — the exact failure mode
+// docs/adr/0009 closes.
+func TestSkipNextWithRepeatedKeyIsANoOp(t *testing.T) {
+	repo, svc := setup(t)
+	ctx := context.Background()
+	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
+
+	first, err := svc.SkipNext(ctx, s.ID, "retry-key", anyCaller)
+	if err != nil {
+		t.Fatalf("first skip: %v", err)
+	}
+	second, err := svc.SkipNext(ctx, s.ID, "retry-key", anyCaller)
+	if err != nil {
+		t.Fatalf("replayed skip: %v", err)
+	}
+	if second.NextRunDate == nil || first.NextRunDate == nil || !second.NextRunDate.Equal(*first.NextRunDate) {
+		t.Errorf("next_run_date changed on replay: first=%v second=%v", first.NextRunDate, second.NextRunDate)
+	}
+
+	if n := len(byStatus(occurrences(t, repo, s.ID), domain.OccurrenceSkipped)); n != 1 {
+		t.Errorf("%d occurrences skipped after a replayed request, want exactly 1", n)
+	}
+	if n := countEvents(t, repo, s.ID, domain.EventOccurrenceSkipped); n != 1 {
+		t.Errorf("%d skip events recorded after a replayed request, want exactly 1", n)
+	}
+
+	// A fresh key is a distinct customer action and must still go through.
+	if _, err := svc.SkipNext(ctx, s.ID, "another-key", anyCaller); err != nil {
+		t.Fatalf("skip with a new key: %v", err)
+	}
+	if n := len(byStatus(occurrences(t, repo, s.ID), domain.OccurrenceSkipped)); n != 2 {
+		t.Errorf("%d occurrences skipped after a second, distinct key, want 2", n)
+	}
+}
+
+// The same replay guard applies to Defer: resolving "next actionable" again on retry
+// could shift a second occurrence, or shift the same one twice.
+func TestDeferWithRepeatedKeyIsANoOp(t *testing.T) {
+	repo, svc := setup(t)
+	ctx := context.Background()
+	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
+
+	before := occurrences(t, repo, s.ID)
+	target := before[0]
+
+	if _, err := svc.Defer(ctx, s.ID, 7, "retry-key", anyCaller); err != nil {
+		t.Fatalf("first defer: %v", err)
+	}
+	if _, err := svc.Defer(ctx, s.ID, 7, "retry-key", anyCaller); err != nil {
+		t.Fatalf("replayed defer: %v", err)
+	}
+
+	for _, o := range occurrences(t, repo, s.ID) {
+		if o.SequenceNo != target.SequenceNo {
+			continue
+		}
+		want := target.ScheduledFor.AddDays(7)
+		if !o.ScheduledFor.Equal(want) {
+			t.Errorf("occurrence at %s after a replayed defer, want %s (shifted once, not twice)",
+				o.ScheduledFor, want)
+		}
+	}
+	if n := countEvents(t, repo, s.ID, domain.EventOccurrenceDeferred); n != 1 {
+		t.Errorf("%d defer events recorded after a replayed request, want exactly 1", n)
+	}
+
+	if _, err := svc.Defer(ctx, s.ID, 3, "another-key", anyCaller); err != nil {
+		t.Fatalf("defer with a new key: %v", err)
+	}
+	if n := countEvents(t, repo, s.ID, domain.EventOccurrenceDeferred); n != 2 {
+		t.Errorf("%d defer events recorded after a second, distinct key, want 2", n)
+	}
+}
+
+// Concurrent replays of the same skip must produce exactly one mutation. The row lock
+// from ADR 0007 is what makes the idempotency check safe: without it, two callers could
+// both observe "not done yet" before either writes.
+func TestConcurrentSkipsWithTheSameKeyProduceOneMutation(t *testing.T) {
+	repo, svc := setup(t)
+	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	const callers = 8
+	won, conflicted := classify(t, contend(callers, func(int) error {
+		_, err := svc.SkipNext(ctx, s.ID, "shared-retry-key", anyCaller)
+		return err
+	}))
+	if conflicted != 0 {
+		t.Errorf("%d calls conflicted; a replay must succeed as a no-op, not fail", conflicted)
+	}
+	if won != callers {
+		t.Errorf("%d of %d replayed calls returned successfully, want all %d", won, callers, callers)
+	}
+
+	if n := len(byStatus(occurrences(t, repo, s.ID), domain.OccurrenceSkipped)); n != 1 {
+		t.Errorf("%d occurrences skipped by %d concurrent replays, want exactly 1", n, callers)
+	}
+	if n := countEvents(t, repo, s.ID, domain.EventOccurrenceSkipped); n != 1 {
+		t.Errorf("%d skip events recorded by %d concurrent replays, want exactly 1", n, callers)
 	}
 }
 
@@ -317,10 +427,10 @@ func TestSkipAndDeferRejectedOnPausedSchedule(t *testing.T) {
 		t.Fatalf("pause: %v", err)
 	}
 
-	if _, err := svc.SkipNext(ctx, s.ID, anyCaller); !domain.IsTransitionError(err) {
+	if _, err := svc.SkipNext(ctx, s.ID, anyKey, anyCaller); !domain.IsTransitionError(err) {
 		t.Errorf("skip on a paused schedule returned %v, want a TransitionError", err)
 	}
-	if _, err := svc.Defer(ctx, s.ID, 7, anyCaller); !domain.IsTransitionError(err) {
+	if _, err := svc.Defer(ctx, s.ID, 7, anyKey, anyCaller); !domain.IsTransitionError(err) {
 		t.Errorf("defer on a paused schedule returned %v, want a TransitionError", err)
 	}
 }
@@ -471,8 +581,8 @@ func TestCanceledScheduleAcceptsNoFurtherTransitions(t *testing.T) {
 	checks := map[string]error{
 		"pause":   errOf(func() error { _, e := svc.Pause(ctx, s.ID, nil, anyCaller); return e }),
 		"resume":  errOf(func() error { _, e := svc.Resume(ctx, s.ID, anyCaller); return e }),
-		"skip":    errOf(func() error { _, e := svc.SkipNext(ctx, s.ID, anyCaller); return e }),
-		"defer":   errOf(func() error { _, e := svc.Defer(ctx, s.ID, 7, anyCaller); return e }),
+		"skip":    errOf(func() error { _, e := svc.SkipNext(ctx, s.ID, anyKey, anyCaller); return e }),
+		"defer":   errOf(func() error { _, e := svc.Defer(ctx, s.ID, 7, anyKey, anyCaller); return e }),
 		"cadence": errOf(func() error { _, e := svc.ChangeCadence(ctx, s.ID, 60, anyCaller); return e }),
 		"cancel":  errOf(func() error { _, e := svc.Cancel(ctx, s.ID, domain.ReasonOther, anyCaller); return e }),
 	}
@@ -528,8 +638,8 @@ func TestEveryTransitionRecordsExactlyOneEvent(t *testing.T) {
 		name string
 		run  func() error
 	}{
-		{"skip", func() error { _, e := svc.SkipNext(ctx, s.ID, anyCaller); return e }},
-		{"defer", func() error { _, e := svc.Defer(ctx, s.ID, 5, anyCaller); return e }},
+		{"skip", func() error { _, e := svc.SkipNext(ctx, s.ID, anyKey, anyCaller); return e }},
+		{"defer", func() error { _, e := svc.Defer(ctx, s.ID, 5, anyKey, anyCaller); return e }},
 		{"cadence", func() error { _, e := svc.ChangeCadence(ctx, s.ID, 45, anyCaller); return e }},
 		{"pause", func() error { _, e := svc.Pause(ctx, s.ID, nil, anyCaller); return e }},
 		{"resume", func() error { _, e := svc.Resume(ctx, s.ID, anyCaller); return e }},
@@ -551,7 +661,7 @@ func TestEventPayloadsAreValidJSON(t *testing.T) {
 	ctx := context.Background()
 	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
 
-	if _, err := svc.Defer(ctx, s.ID, 3, anyCaller); err != nil {
+	if _, err := svc.Defer(ctx, s.ID, 3, anyKey, anyCaller); err != nil {
 		t.Fatalf("defer: %v", err)
 	}
 	if _, err := svc.Cancel(ctx, s.ID, domain.ReasonDeliveryIssue, anyCaller); err != nil {

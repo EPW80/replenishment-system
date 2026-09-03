@@ -130,7 +130,13 @@ type ScheduleEvent struct {
 	Actor      EventActor
 	ReasonCode *string
 	Payload    []byte // JSON
-	CreatedAt  time.Time
+
+	// IdempotencyKey is set only by SkipNext and Defer, the two transitions that
+	// resolve their target occurrence implicitly and so need a retry guard the other
+	// four don't (docs/adr/0009). nil for every other event type.
+	IdempotencyKey *string
+
+	CreatedAt time.Time
 }
 
 // Event type constants. Kept as constants so a typo cannot silently create a new

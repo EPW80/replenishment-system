@@ -183,6 +183,26 @@ var CancellationReasons = []string{
 }
 
 // ValidateCancellationReason checks a reason code against the closed set.
+// MaxIdempotencyKeyLength bounds the client-supplied retry key on SkipNext and
+// Defer. Generous enough for a UUID or any reasonable client-generated token, tight
+// enough that the column can't become a place to stash arbitrary data.
+const MaxIdempotencyKeyLength = 200
+
+// ValidateIdempotencyKey checks the retry key SkipNext and Defer require.
+//
+// Empty is rejected rather than treated as "no key": a caller that forgot to generate
+// one is a bug in the caller, and the two occurrences it can silently combine (spec
+// context, see docs/adr/0009) are not a case to paper over with a default.
+func ValidateIdempotencyKey(key string) error {
+	if key == "" {
+		return fmt.Errorf("idempotency_key is required")
+	}
+	if len(key) > MaxIdempotencyKeyLength {
+		return fmt.Errorf("idempotency_key must be at most %d characters, got %d", MaxIdempotencyKeyLength, len(key))
+	}
+	return nil
+}
+
 func ValidateCancellationReason(code string) error {
 	for _, r := range CancellationReasons {
 		if r == code {
