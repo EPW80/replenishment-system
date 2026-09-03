@@ -58,6 +58,7 @@ type occurrenceResponse struct {
 
 type createScheduleRequest struct {
 	CustomerID        string         `json:"customer_id"`
+	CustomerEmail     string         `json:"customer_email"`
 	OriginOrderID     string         `json:"origin_order_id"`
 	IntervalDays      int            `json:"interval_days"`
 	AnchorDate        string         `json:"anchor_date"`
@@ -105,6 +106,10 @@ func (h ScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "customer_id is required")
 		return
 	}
+	if err := domain.ValidateEmail(req.CustomerEmail); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if req.OriginOrderID == "" {
 		writeError(w, http.StatusBadRequest, "origin_order_id is required")
 		return
@@ -134,6 +139,7 @@ func (h ScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	s := domain.Schedule{
 		ID:                uuid.NewString(),
 		CustomerID:        req.CustomerID,
+		CustomerEmail:     req.CustomerEmail,
 		OriginOrderID:     req.OriginOrderID,
 		Status:            domain.ScheduleActive,
 		IntervalDays:      req.IntervalDays,

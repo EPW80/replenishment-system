@@ -145,6 +145,9 @@ func TestScheduleRoundTrip(t *testing.T) {
 	if got.Timezone != "America/Los_Angeles" {
 		t.Errorf("timezone = %q", got.Timezone)
 	}
+	if got.CustomerEmail != s.CustomerEmail {
+		t.Errorf("customer_email = %q, want %q", got.CustomerEmail, s.CustomerEmail)
+	}
 
 	items, err := repo.ListScheduleItems(ctx, s.ID, store.SystemScope())
 	if err != nil {

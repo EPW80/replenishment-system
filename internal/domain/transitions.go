@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"net/mail"
 )
 
 // Action is one of the six customer- or admin-initiated transitions in spec §6.
@@ -198,6 +199,32 @@ func ValidateIdempotencyKey(key string) error {
 	}
 	if len(key) > MaxIdempotencyKeyLength {
 		return fmt.Errorf("idempotency_key must be at most %d characters, got %d", MaxIdempotencyKeyLength, len(key))
+	}
+	return nil
+}
+
+// MaxEmailLength is RFC 5321's own limit on a total mailbox address (§4.5.3.1.3),
+// generous for any real address and tight enough to keep the column from becoming a
+// place to stash arbitrary text.
+const MaxEmailLength = 254
+
+// ValidateEmail checks the address Phase 4's notifications are sent to (spec §7).
+//
+// Empty is rejected rather than defaulted: a checkout always has an email address, the
+// same way it always has an origin_order_id, and a schedule created without one would
+// silently never notify its customer instead of failing loudly where the gap is
+// visible. net/mail.ParseAddress is a syntax gate, not a deliverability guarantee — an
+// address that parses can still hard-bounce, which the notification dispatcher (a
+// later PR) handles at send time, not here.
+func ValidateEmail(email string) error {
+	if email == "" {
+		return fmt.Errorf("customer_email is required")
+	}
+	if len(email) > MaxEmailLength {
+		return fmt.Errorf("customer_email must be at most %d characters, got %d", MaxEmailLength, len(email))
+	}
+	if _, err := mail.ParseAddress(email); err != nil {
+		return fmt.Errorf("customer_email is not a valid address: %w", err)
 	}
 	return nil
 }

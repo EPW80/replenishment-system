@@ -26,6 +26,7 @@ func newSchedule(t *testing.T, repo *store.PostgresRepository, anchor domain.Dat
 	s := domain.Schedule{
 		ID:                uuid.NewString(),
 		CustomerID:        "cust_" + uuid.NewString()[:8],
+		CustomerEmail:     "customer+" + uuid.NewString()[:8] + "@example.com",
 		OriginOrderID:     "order_" + uuid.NewString(),
 		Status:            domain.ScheduleActive,
 		IntervalDays:      intervalDays,
