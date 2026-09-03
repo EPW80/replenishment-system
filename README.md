@@ -46,7 +46,7 @@ cp .env.example .env
 # then edit .env: set PORTAL_JWT_SECRET and SERVICE_API_KEY, e.g. via
 #   openssl rand -base64 48
 # the service refuses to start without both (see .env.example for why)
-export $(grep -v '^#' .env | xargs)
+set -a; . ./.env; set +a
 make db-up     # start local Postgres 16
 make migrate   # apply migrations
 make run       # start the service on :8080
