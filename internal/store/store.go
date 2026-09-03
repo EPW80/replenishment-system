@@ -601,19 +601,23 @@ func (r *PostgresRepository) ClaimNotifiableEvents(ctx context.Context, eventTyp
 }
 
 // MarkNotificationSent is documented on Repository.
+//
+// last_error is cleared rather than left from a prior failed attempt: a row that just
+// succeeded should read as fully resolved, not carry a stale error that makes a
+// successful send look suspect on inspection.
 func (r *PostgresRepository) MarkNotificationSent(ctx context.Context, scheduleEventID int64, sentAt time.Time) error {
-	_, err := r.conn.ExecContext(ctx, `
-		UPDATE notification_log SET status = 'sent', sent_at = $2
+	res, err := r.conn.ExecContext(ctx, `
+		UPDATE notification_log SET status = 'sent', sent_at = $2, last_error = NULL
 		WHERE schedule_event_id = $1`, scheduleEventID, sentAt)
 	if err != nil {
 		return fmt.Errorf("mark notification sent: %w", err)
 	}
-	return nil
+	return checkAffected(res)
 }
 
 // MarkNotificationFailed is documented on Repository.
 func (r *PostgresRepository) MarkNotificationFailed(ctx context.Context, scheduleEventID int64, errMsg string, maxAttempts int) error {
-	_, err := r.conn.ExecContext(ctx, `
+	res, err := r.conn.ExecContext(ctx, `
 		UPDATE notification_log SET
 			last_error = $2,
 			status = CASE WHEN attempts >= $3 THEN 'failed' ELSE 'pending' END
@@ -621,7 +625,7 @@ func (r *PostgresRepository) MarkNotificationFailed(ctx context.Context, schedul
 	if err != nil {
 		return fmt.Errorf("mark notification failed: %w", err)
 	}
-	return nil
+	return checkAffected(res)
 }
 
 func (r *PostgresRepository) ListEvents(ctx context.Context, scheduleID string) ([]domain.ScheduleEvent, error) {

@@ -224,6 +224,36 @@ func TestRunAllRetriesAFailedSendOnALaterRun(t *testing.T) {
 // Each of the four event types must render without error and produce distinct,
 // non-empty content -- a template that panics or renders blank would fail silently
 // as a SendFailed outcome, not a build error.
+// The paused-until date must come from the schedule's own current state, not from
+// whatever the triggering event's payload happened to capture -- a reclaimed or
+// delayed send must not describe a paused_until a later transition already changed.
+// Here the schedule row carries a real date but the event payload is empty, which is
+// exactly the case a payload-only read would get wrong.
+func TestPausedEmailUsesTheScheduleRowNotTheEventPayload(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+
+	s := newScheduleWithEmail(t, repo, "customer@example.com", domain.EventSchedulePaused)
+	until := domain.NewDate(2026, time.June, 1)
+	if err := repo.UpdateScheduleStatus(ctx, s.ID, domain.SchedulePaused, &until); err != nil {
+		t.Fatalf("update schedule status: %v", err)
+	}
+
+	sender := newStubSender()
+	d := notify.New(repo, sender, "support@example.com", nil)
+	if _, err := d.RunAll(ctx); err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+
+	body := sender.last().body
+	if !strings.Contains(body, until.String()) {
+		t.Errorf("body = %q, want it to contain the schedule's actual paused_until (%s)", body, until.String())
+	}
+	if strings.Contains(body, "stay paused until you resume") {
+		t.Errorf("body = %q, fell back to the indefinite-pause copy despite a real paused_until on the schedule", body)
+	}
+}
+
 func TestRunAllRendersEveryEventType(t *testing.T) {
 	repo := newRepo(t)
 	ctx := context.Background()

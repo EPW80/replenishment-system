@@ -41,9 +41,17 @@ CREATE TABLE notification_log (
         CHECK (status IN ('pending', 'sent', 'failed'))
 );
 
+-- ClaimNotifiableEvents filters schedule_events by event_type on every run.
+-- schedule_events' only existing index is (schedule_id, id) (00001), which does
+-- nothing for a query with no schedule_id predicate -- without this, the claim
+-- degrades into a full scan of the whole append-only event log as it grows.
+CREATE INDEX schedule_events_event_type_id_idx
+    ON schedule_events (event_type, id);
+
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
+DROP INDEX IF EXISTS schedule_events_event_type_id_idx;
 DROP TABLE IF EXISTS notification_log;
 -- +goose StatementEnd
