@@ -182,7 +182,6 @@ var CancellationReasons = []string{
 	ReasonOther,
 }
 
-// ValidateCancellationReason checks a reason code against the closed set.
 // MaxIdempotencyKeyLength bounds the client-supplied retry key on SkipNext and
 // Defer. Generous enough for a UUID or any reasonable client-generated token, tight
 // enough that the column can't become a place to stash arbitrary data.
@@ -203,6 +202,7 @@ func ValidateIdempotencyKey(key string) error {
 	return nil
 }
 
+// ValidateCancellationReason checks a reason code against the closed set.
 func ValidateCancellationReason(code string) error {
 	for _, r := range CancellationReasons {
 		if r == code {
