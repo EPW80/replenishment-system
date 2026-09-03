@@ -2,8 +2,8 @@
 // without a customer or an operator asking.
 //
 // Every transition here still goes through internal/schedule, so a schedule the sweep
-// touches is locked, validated and audited exactly as one a customer touches. The only
-// difference is the actor recorded on the event.
+// touches is locked, validated and audited exactly as it would be for a customer.
+// Only the actor recorded on the event differs.
 //
 // It reasons about dates and nothing else. A sweep decides when the next *order* is
 // placed; it never records, infers or reports anything about the product being used
