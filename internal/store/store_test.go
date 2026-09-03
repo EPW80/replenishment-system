@@ -43,6 +43,54 @@ func TestIdempotencyKeyPreventsDuplicates(t *testing.T) {
 	}
 }
 
+// origin_order_id is schedule creation's idempotency key — the schedule-level
+// counterpart to TestIdempotencyKeyPreventsDuplicates above. A retried POST /schedules
+// (a timeout, a duplicate webhook delivery, a redeploy mid-request) must never create
+// a second, independent schedule for the same checkout.
+func TestOriginOrderIDPreventsDuplicateSchedules(t *testing.T) {
+	_, repo := newTestDB(t)
+	ctx := context.Background()
+
+	origin := "order_" + uuid.NewString()
+	first := domain.Schedule{
+		ID:            uuid.NewString(),
+		CustomerID:    "cust_1",
+		OriginOrderID: origin,
+		Status:        domain.ScheduleActive,
+		IntervalDays:  30,
+		AnchorDate:    domain.NewDate(2026, time.January, 1),
+		Timezone:      "UTC",
+	}
+	if err := repo.CreateSchedule(ctx, first, nil); err != nil {
+		t.Fatalf("first insert: %v", err)
+	}
+
+	// Same origin_order_id, different row id and a slightly different body — what a
+	// retry from the checkout side looks like.
+	retry := first
+	retry.ID = uuid.NewString()
+	retry.IntervalDays = 60
+	if err := repo.CreateSchedule(ctx, retry, nil); !errors.Is(err, store.ErrDuplicateSchedule) {
+		t.Fatalf("second insert error = %v, want ErrDuplicateSchedule", err)
+	}
+
+	got, err := repo.ListSchedulesByCustomer(ctx, "cust_1")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d schedules, want exactly 1 — a duplicate here is a duplicate recurring-order stream", len(got))
+	}
+
+	byOrigin, err := repo.GetScheduleByOriginOrderID(ctx, origin)
+	if err != nil {
+		t.Fatalf("get by origin order id: %v", err)
+	}
+	if byOrigin.ID != first.ID {
+		t.Errorf("got schedule %s, want the original %s", byOrigin.ID, first.ID)
+	}
+}
+
 // The same sequence number must not be reusable under a different key either.
 func TestSequenceNumberIsUniquePerSchedule(t *testing.T) {
 	_, repo := newTestDB(t)

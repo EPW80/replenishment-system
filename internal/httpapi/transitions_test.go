@@ -25,12 +25,13 @@ func newScheduleWithHorizon(t *testing.T, repo *store.PostgresRepository) domain
 	ctx := context.Background()
 
 	s := domain.Schedule{
-		ID:           uuid.NewString(),
-		CustomerID:   "cust_" + uuid.NewString()[:8],
-		Status:       domain.ScheduleActive,
-		IntervalDays: 30,
-		AnchorDate:   domain.DateOf(time.Now().UTC()),
-		Timezone:     "UTC",
+		ID:            uuid.NewString(),
+		CustomerID:    "cust_" + uuid.NewString()[:8],
+		OriginOrderID: "order_" + uuid.NewString(),
+		Status:        domain.ScheduleActive,
+		IntervalDays:  30,
+		AnchorDate:    domain.DateOf(time.Now().UTC()),
+		Timezone:      "UTC",
 	}
 	if err := repo.CreateSchedule(ctx, s, []domain.ScheduleItem{
 		{ID: uuid.NewString(), ScheduleID: s.ID, SKU: "SKU-001", Quantity: 1},

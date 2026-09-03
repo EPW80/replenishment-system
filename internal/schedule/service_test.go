@@ -40,12 +40,13 @@ func newActive(t *testing.T, repo *store.PostgresRepository, anchor domain.Date,
 	ctx := context.Background()
 
 	s := domain.Schedule{
-		ID:           uuid.NewString(),
-		CustomerID:   "cust_" + uuid.NewString()[:8],
-		Status:       domain.ScheduleActive,
-		IntervalDays: interval,
-		AnchorDate:   anchor,
-		Timezone:     "UTC",
+		ID:            uuid.NewString(),
+		CustomerID:    "cust_" + uuid.NewString()[:8],
+		OriginOrderID: "order_" + uuid.NewString(),
+		Status:        domain.ScheduleActive,
+		IntervalDays:  interval,
+		AnchorDate:    anchor,
+		Timezone:      "UTC",
 	}
 	if err := repo.CreateSchedule(ctx, s, []domain.ScheduleItem{
 		{ID: uuid.NewString(), ScheduleID: s.ID, SKU: "SKU-001", Quantity: 1},

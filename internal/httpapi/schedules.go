@@ -27,15 +27,16 @@ type ScheduleHandler struct {
 
 // scheduleResponse is the wire shape of a schedule.
 type scheduleResponse struct {
-	ID           string  `json:"id"`
-	CustomerID   string  `json:"customer_id"`
-	Status       string  `json:"status"`
-	IntervalDays int     `json:"interval_days"`
-	AnchorDate   string  `json:"anchor_date"`
-	NextRunDate  *string `json:"next_run_date"`
-	Timezone     string  `json:"timezone"`
-	DiscountPct  float64 `json:"discount_pct"`
-	PausedUntil  *string `json:"paused_until"`
+	ID            string  `json:"id"`
+	CustomerID    string  `json:"customer_id"`
+	OriginOrderID string  `json:"origin_order_id"`
+	Status        string  `json:"status"`
+	IntervalDays  int     `json:"interval_days"`
+	AnchorDate    string  `json:"anchor_date"`
+	NextRunDate   *string `json:"next_run_date"`
+	Timezone      string  `json:"timezone"`
+	DiscountPct   float64 `json:"discount_pct"`
+	PausedUntil   *string `json:"paused_until"`
 
 	Items []itemResponse `json:"items"`
 }
@@ -57,6 +58,7 @@ type occurrenceResponse struct {
 
 type createScheduleRequest struct {
 	CustomerID        string         `json:"customer_id"`
+	OriginOrderID     string         `json:"origin_order_id"`
 	IntervalDays      int            `json:"interval_days"`
 	AnchorDate        string         `json:"anchor_date"`
 	Timezone          string         `json:"timezone"`
@@ -103,6 +105,10 @@ func (h ScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "customer_id is required")
 		return
 	}
+	if req.OriginOrderID == "" {
+		writeError(w, http.StatusBadRequest, "origin_order_id is required")
+		return
+	}
 	if err := domain.ValidateInterval(req.IntervalDays); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -128,6 +134,7 @@ func (h ScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	s := domain.Schedule{
 		ID:                uuid.NewString(),
 		CustomerID:        req.CustomerID,
+		OriginOrderID:     req.OriginOrderID,
 		Status:            domain.ScheduleActive,
 		IntervalDays:      req.IntervalDays,
 		AnchorDate:        anchor,
@@ -163,6 +170,25 @@ func (h ScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 			Actor:      domain.ActorCustomer,
 		})
 	})
+
+	// origin_order_id is this endpoint's idempotency key (the schedule-creation
+	// equivalent of occurrences.idempotency_key): a retry of a checkout that already
+	// succeeded returns the schedule it created, 200 rather than 201, instead of
+	// creating a second independent one.
+	if errors.Is(err, store.ErrDuplicateSchedule) {
+		existing, getErr := h.Repo.GetScheduleByOriginOrderID(ctx, req.OriginOrderID)
+		if getErr != nil {
+			writeError(w, http.StatusInternalServerError, "could not create schedule")
+			return
+		}
+		existingItems, getErr := h.Repo.ListScheduleItems(ctx, existing.ID, store.SystemScope())
+		if getErr != nil {
+			writeError(w, http.StatusInternalServerError, "could not create schedule")
+			return
+		}
+		writeJSON(w, http.StatusOK, h.toResponse(existing, existingItems))
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not create schedule")
 		return
@@ -288,14 +314,15 @@ func (h ScheduleHandler) ListByCustomer(w http.ResponseWriter, r *http.Request) 
 
 func (h ScheduleHandler) toResponse(s domain.Schedule, items []domain.ScheduleItem) scheduleResponse {
 	resp := scheduleResponse{
-		ID:           s.ID,
-		CustomerID:   s.CustomerID,
-		Status:       string(s.Status),
-		IntervalDays: s.IntervalDays,
-		AnchorDate:   s.AnchorDate.String(),
-		Timezone:     s.Timezone,
-		DiscountPct:  s.DiscountPct,
-		Items:        make([]itemResponse, 0, len(items)),
+		ID:            s.ID,
+		CustomerID:    s.CustomerID,
+		OriginOrderID: s.OriginOrderID,
+		Status:        string(s.Status),
+		IntervalDays:  s.IntervalDays,
+		AnchorDate:    s.AnchorDate.String(),
+		Timezone:      s.Timezone,
+		DiscountPct:   s.DiscountPct,
+		Items:         make([]itemResponse, 0, len(items)),
 	}
 	if s.NextRunDate != nil {
 		v := s.NextRunDate.String()
