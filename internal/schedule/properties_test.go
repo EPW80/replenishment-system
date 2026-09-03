@@ -108,11 +108,16 @@ func TestTransitionSequencesPreserveInvariants(t *testing.T) {
 }
 
 // applyRandomAction picks one of the six spec §6 transitions and applies it.
+//
+// Each call is a distinct, freshly-chosen action rather than a retry of a previous one,
+// so skip and defer each get their own fresh idempotency key from rng — a shared key
+// across steps would make a step spuriously no-op against an earlier one instead of
+// exercising the transition it was chosen to test.
 func applyRandomAction(ctx context.Context, svc interface {
 	Pause(context.Context, string, *domain.Date, schedule.Caller) (domain.Schedule, error)
 	Resume(context.Context, string, schedule.Caller) (domain.Schedule, error)
-	SkipNext(context.Context, string, schedule.Caller) (domain.Schedule, error)
-	Defer(context.Context, string, int, schedule.Caller) (domain.Schedule, error)
+	SkipNext(context.Context, string, string, schedule.Caller) (domain.Schedule, error)
+	Defer(context.Context, string, int, string, schedule.Caller) (domain.Schedule, error)
 	ChangeCadence(context.Context, string, int, schedule.Caller) (domain.Schedule, error)
 	Cancel(context.Context, string, string, schedule.Caller) (domain.Schedule, error)
 }, id string, rng *rand.Rand) (domain.Action, string, error) {
@@ -124,11 +129,13 @@ func applyRandomAction(ctx context.Context, svc interface {
 		_, err := svc.Resume(ctx, id, anyCaller)
 		return domain.ActionResume, "resume", err
 	case 2:
-		_, err := svc.SkipNext(ctx, id, anyCaller)
+		key := fmt.Sprintf("skip-%d", rng.Uint64())
+		_, err := svc.SkipNext(ctx, id, key, anyCaller)
 		return domain.ActionSkipNext, "skip", err
 	case 3:
 		days := 1 + rng.IntN(30)
-		_, err := svc.Defer(ctx, id, days, anyCaller)
+		key := fmt.Sprintf("defer-%d", rng.Uint64())
+		_, err := svc.Defer(ctx, id, days, key, anyCaller)
 		return domain.ActionDefer, fmt.Sprintf("defer(%d)", days), err
 	case 4:
 		interval := 7 + rng.IntN(174)

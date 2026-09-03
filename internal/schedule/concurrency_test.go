@@ -2,6 +2,7 @@ package schedule_test
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -137,8 +138,11 @@ func TestConcurrentSkipsNeverTakeTheSameOccurrence(t *testing.T) {
 	defer cancel()
 
 	const callers = 3
-	won, _ := classify(t, contend(callers, func(int) error {
-		_, err := svc.SkipNext(ctx, s.ID, anyCaller)
+	won, _ := classify(t, contend(callers, func(i int) error {
+		// Each goroutine is a distinct customer action, not a retry of the others, so
+		// each gets its own key — a shared key would make this test exercise the
+		// idempotency guard instead of the row lock it is meant to prove.
+		_, err := svc.SkipNext(ctx, s.ID, fmt.Sprintf("skip-%d", i), anyCaller)
 		return err
 	}))
 

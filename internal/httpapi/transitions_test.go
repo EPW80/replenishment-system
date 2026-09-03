@@ -64,8 +64,8 @@ func TestTransitionEndpointsHappyPath(t *testing.T) {
 	}{
 		{"pause", "/pause", `{}`, "paused"},
 		{"pause with a resume date", "/pause", `{"paused_until":"2030-01-01"}`, "paused"},
-		{"skip", "/skip", ``, "active"},
-		{"defer", "/defer", `{"days":7}`, "active"},
+		{"skip", "/skip", `{"idempotency_key":"skip-key-1"}`, "active"},
+		{"defer", "/defer", `{"days":7,"idempotency_key":"defer-key-1"}`, "active"},
 		{"change cadence", "/cadence", `{"interval_days":60}`, "active"},
 		{"cancel", "/cancel", `{"reason_code":"too_expensive"}`, "canceled"},
 	}
@@ -106,6 +106,55 @@ func TestResumeEndpoint(t *testing.T) {
 	}
 }
 
+// A retried skip or defer request — same idempotency_key — must come back 200 without
+// acting a second time. This is the HTTP-visible half of docs/adr/0009: a client that
+// times out and retries must not risk a second occurrence disappearing.
+func TestSkipAndDeferAreIdempotentOnReplay(t *testing.T) {
+	h, repo, _ := newAPI(t)
+
+	tests := []struct {
+		name string
+		path string
+		body string
+	}{
+		{"skip", "/skip", `{"idempotency_key":"replay-key"}`},
+		{"defer", "/defer", `{"days":7,"idempotency_key":"replay-key"}`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newScheduleWithHorizon(t, repo)
+			cred := customerCred(t, s.CustomerID)
+
+			first := do(t, h, http.MethodPost, "/schedules/"+s.ID+tc.path, tc.body, cred)
+			if first.Code != http.StatusOK {
+				t.Fatalf("first request: status = %d, body = %s", first.Code, first.Body.String())
+			}
+			second := do(t, h, http.MethodPost, "/schedules/"+s.ID+tc.path, tc.body, cred)
+			if second.Code != http.StatusOK {
+				t.Fatalf("replayed request: status = %d, body = %s", second.Code, second.Body.String())
+			}
+			if first.Body.String() != second.Body.String() {
+				t.Errorf("replay returned a different body\nfirst:  %s\nsecond: %s", first.Body.String(), second.Body.String())
+			}
+
+			events, err := repo.ListEvents(context.Background(), s.ID)
+			if err != nil {
+				t.Fatalf("list events: %v", err)
+			}
+			n := 0
+			for _, e := range events {
+				if e.EventType == domain.EventOccurrenceSkipped || e.EventType == domain.EventOccurrenceDeferred {
+					n++
+				}
+			}
+			if n != 1 {
+				t.Errorf("%d transition events recorded after a replayed %s, want exactly 1", n, tc.name)
+			}
+		})
+	}
+}
+
 // A precondition failure is 409, not 400. The request is well-formed and the customer
 // is allowed to make it — the schedule is simply in a state that cannot accept it, and
 // an identical retry after a resume will succeed.
@@ -120,8 +169,8 @@ func TestFailedPreconditionIsConflict(t *testing.T) {
 	}{
 		{"pause an already paused schedule", "/pause", "/pause", `{}`},
 		{"resume an active schedule", "", "/resume", ``},
-		{"skip on a paused schedule", "/pause", "/skip", ``},
-		{"defer on a paused schedule", "/pause", "/defer", `{"days":7}`},
+		{"skip on a paused schedule", "/pause", "/skip", `{"idempotency_key":"skip-key-1"}`},
+		{"defer on a paused schedule", "/pause", "/defer", `{"days":7,"idempotency_key":"defer-key-1"}`},
 	}
 
 	for _, tc := range tests {
@@ -156,8 +205,10 @@ func TestErrorCopyFollowsTheComplianceBoundary(t *testing.T) {
 	for _, path := range []string{"/pause", "/resume", "/skip", "/defer", "/cadence", "/cancel"} {
 		body := `{}`
 		switch path {
+		case "/skip":
+			body = `{"idempotency_key":"skip-key-1"}`
 		case "/defer":
-			body = `{"days":7}`
+			body = `{"days":7,"idempotency_key":"defer-key-1"}`
 		case "/cadence":
 			body = `{"interval_days":60}`
 		case "/cancel":
@@ -185,6 +236,10 @@ func TestMalformedRequestsAreBadRequest(t *testing.T) {
 		{"defer with zero days", "/defer", `{"days":0}`},
 		{"defer with a negative", "/defer", `{"days":-5}`},
 		{"defer beyond the limit", "/defer", `{"days":900}`},
+		{"skip with no idempotency key", "/skip", `{}`},
+		{"skip with an empty idempotency key", "/skip", `{"idempotency_key":""}`},
+		{"defer with no idempotency key", "/defer", `{"days":7}`},
+		{"defer with an empty idempotency key", "/defer", `{"days":7,"idempotency_key":""}`},
 		{"cadence below the range", "/cadence", `{"interval_days":3}`},
 		{"cadence above the range", "/cadence", `{"interval_days":400}`},
 		{"cancel with no reason", "/cancel", `{}`},
@@ -212,8 +267,8 @@ func TestTransitionsOnUnknownScheduleAreNotFound(t *testing.T) {
 	for path, body := range map[string]string{
 		"/pause":   `{}`,
 		"/resume":  ``,
-		"/skip":    ``,
-		"/defer":   `{"days":7}`,
+		"/skip":    `{"idempotency_key":"skip-key-1"}`,
+		"/defer":   `{"days":7,"idempotency_key":"defer-key-1"}`,
 		"/cadence": `{"interval_days":60}`,
 		"/cancel":  `{"reason_code":"other"}`,
 	} {
@@ -273,10 +328,10 @@ func (failingService) Pause(context.Context, string, *domain.Date, schedule.Call
 func (failingService) Resume(context.Context, string, schedule.Caller) (domain.Schedule, error) {
 	return domain.Schedule{}, errDown
 }
-func (failingService) SkipNext(context.Context, string, schedule.Caller) (domain.Schedule, error) {
+func (failingService) SkipNext(context.Context, string, string, schedule.Caller) (domain.Schedule, error) {
 	return domain.Schedule{}, errDown
 }
-func (failingService) Defer(context.Context, string, int, schedule.Caller) (domain.Schedule, error) {
+func (failingService) Defer(context.Context, string, int, string, schedule.Caller) (domain.Schedule, error) {
 	return domain.Schedule{}, errDown
 }
 func (failingService) ChangeCadence(context.Context, string, int, schedule.Caller) (domain.Schedule, error) {

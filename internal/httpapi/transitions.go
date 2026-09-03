@@ -28,16 +28,18 @@ type TransitionHandler struct {
 type TransitionService interface {
 	Pause(ctx context.Context, scheduleID string, until *domain.Date, caller schedule.Caller) (domain.Schedule, error)
 	Resume(ctx context.Context, scheduleID string, caller schedule.Caller) (domain.Schedule, error)
-	SkipNext(ctx context.Context, scheduleID string, caller schedule.Caller) (domain.Schedule, error)
-	Defer(ctx context.Context, scheduleID string, days int, caller schedule.Caller) (domain.Schedule, error)
+	SkipNext(ctx context.Context, scheduleID, idempotencyKey string, caller schedule.Caller) (domain.Schedule, error)
+	Defer(ctx context.Context, scheduleID string, days int, idempotencyKey string, caller schedule.Caller) (domain.Schedule, error)
 	ChangeCadence(ctx context.Context, scheduleID string, intervalDays int, caller schedule.Caller) (domain.Schedule, error)
 	Cancel(ctx context.Context, scheduleID, reasonCode string, caller schedule.Caller) (domain.Schedule, error)
 }
 
 // decode reads a JSON body that may legitimately be absent.
 //
-// pause, resume and skip take no required fields, and a client sending no body at all
-// for those is well-behaved rather than wrong.
+// pause and resume take no required fields, and a client sending no body at all for
+// those is well-behaved rather than wrong. skip and defer do require a body now —
+// idempotency_key — since both resolve their target occurrence implicitly and a
+// retry needs a way to say "this is the same request," not a new one (docs/adr/0009).
 func decode(w http.ResponseWriter, r *http.Request, dst any) error {
 	if r.ContentLength == 0 {
 		return nil
@@ -145,20 +147,35 @@ func (h TransitionHandler) Resume(w http.ResponseWriter, r *http.Request) {
 	h.respond(w, r, s, err, c)
 }
 
+type skipRequest struct {
+	IdempotencyKey string `json:"idempotency_key"`
+}
+
 // Skip handles POST /schedules/{id}/skip — skip the next order, keep the schedule.
 func (h TransitionHandler) Skip(w http.ResponseWriter, r *http.Request) {
+	var req skipRequest
+	if err := decode(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if err := domain.ValidateIdempotencyKey(req.IdempotencyKey); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	c, ok := caller(r)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, "could not update this schedule")
 		return
 	}
 
-	s, err := h.Service.SkipNext(r.Context(), r.PathValue("id"), c)
+	s, err := h.Service.SkipNext(r.Context(), r.PathValue("id"), req.IdempotencyKey, c)
 	h.respond(w, r, s, err, c)
 }
 
 type deferRequest struct {
-	Days int `json:"days"`
+	Days           int    `json:"days"`
+	IdempotencyKey string `json:"idempotency_key"`
 }
 
 // Defer handles POST /schedules/{id}/defer.
@@ -172,6 +189,10 @@ func (h TransitionHandler) Defer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if err := domain.ValidateIdempotencyKey(req.IdempotencyKey); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	c, ok := caller(r)
 	if !ok {
@@ -179,7 +200,7 @@ func (h TransitionHandler) Defer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s, err := h.Service.Defer(r.Context(), r.PathValue("id"), req.Days, c)
+	s, err := h.Service.Defer(r.Context(), r.PathValue("id"), req.Days, req.IdempotencyKey, c)
 	h.respond(w, r, s, err, c)
 }
 

@@ -22,8 +22,8 @@ var protectedRoutes = []struct{ method, path, body string }{
 	{http.MethodGet, "/customers/{customer}/schedules", ""},
 	{http.MethodPost, "/schedules/{id}/pause", `{}`},
 	{http.MethodPost, "/schedules/{id}/resume", `{}`},
-	{http.MethodPost, "/schedules/{id}/skip", `{}`},
-	{http.MethodPost, "/schedules/{id}/defer", `{"days":7}`},
+	{http.MethodPost, "/schedules/{id}/skip", `{"idempotency_key":"skip-key-1"}`},
+	{http.MethodPost, "/schedules/{id}/defer", `{"days":7,"idempotency_key":"defer-key-1"}`},
 	{http.MethodPost, "/schedules/{id}/cadence", `{"interval_days":45}`},
 	{http.MethodPost, "/schedules/{id}/cancel", `{"reason_code":"other"}`},
 }
@@ -137,8 +137,8 @@ func TestOneCustomerCannotReachAnothersSchedule(t *testing.T) {
 		for _, tc := range []struct{ path, body string }{
 			{"/pause", `{}`},
 			{"/resume", `{}`},
-			{"/skip", `{}`},
-			{"/defer", `{"days":7}`},
+			{"/skip", `{"idempotency_key":"skip-key-1"}`},
+			{"/defer", `{"days":7,"idempotency_key":"defer-key-1"}`},
 			{"/cadence", `{"interval_days":45}`},
 			{"/cancel", `{"reason_code":"other"}`},
 		} {
