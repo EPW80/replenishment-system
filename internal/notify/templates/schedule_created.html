@@ -1,0 +1,11 @@
+{{define "subject"}}Your recurring order is set up{{end}}
+{{define "body"}}
+<p>Your recurring order has been set up.</p>
+<ul>
+{{range .Items}}<li>{{.Quantity}} &times; {{.SKU}}</li>
+{{end}}</ul>
+<p>Orders repeat every {{.IntervalDays}} days, starting from {{.AnchorDate}}.</p>
+{{if .NextOrderDate}}<p>Your next order is scheduled for {{.NextOrderDate}}.</p>{{end}}
+<p>You can pause, skip, defer, or cancel it any time from your account. Questions?
+Contact {{.SupportContact}}.</p>
+{{end}}

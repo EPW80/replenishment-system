@@ -91,6 +91,26 @@ type Repository interface {
 	// call did (docs/adr/0009).
 	EventExistsWithKey(ctx context.Context, scheduleID, eventType, idempotencyKey string) (bool, error)
 
+	// ClaimNotifiableEvents finds up to limit schedule_events rows of the given types
+	// that need a notification sent (issue #4, docs/adr/0010) and marks each claimed as
+	// an attempt in the same statement, so two overlapping cmd/notify runs cannot both
+	// claim the same event. A row already sent, or failed permanently, is never
+	// reclaimed; a row still pending past visibilityTimeout is treated as an abandoned
+	// attempt (a prior run crashed after claiming it) and reclaimed.
+	ClaimNotifiableEvents(ctx context.Context, eventTypes []string, visibilityTimeout time.Duration, limit int) ([]domain.NotifiableEvent, error)
+
+	// MarkNotificationSent records a successful send. Issued as its own statement
+	// after the Postmark call returns, never inside the transaction that claimed the
+	// row — a network call has no business holding a database lock.
+	MarkNotificationSent(ctx context.Context, scheduleEventID int64, sentAt time.Time) error
+
+	// MarkNotificationFailed records a failed attempt. If the row's attempts (already
+	// incremented by the claim) have reached maxAttempts, the failure is permanent —
+	// the row is never reclaimed again, so one bad address cannot retry forever or
+	// crowd out newer work. Below the cap, it stays pending and is picked up again
+	// once ClaimNotifiableEvents' visibility timeout passes.
+	MarkNotificationFailed(ctx context.Context, scheduleEventID int64, errMsg string, maxAttempts int) error
+
 	// Spec §6 transitions. Each mutates state that the event log must agree with,
 	// so callers run them inside InTx together with their AppendEvent.
 	UpdateScheduleStatus(ctx context.Context, scheduleID string, status domain.ScheduleStatus, pausedUntil *domain.Date) error
@@ -524,6 +544,84 @@ func (r *PostgresRepository) EventExistsWithKey(ctx context.Context, scheduleID,
 		return false, fmt.Errorf("check idempotency key: %w", err)
 	}
 	return exists, nil
+}
+
+// ClaimNotifiableEvents finds and claims outbox work in one statement: the CTE's
+// FOR UPDATE ... SKIP LOCKED and the INSERT ... ON CONFLICT that follows it run as a
+// single implicit transaction, so the row lock exists only for the duration of this
+// query — no explicit BEGIN/COMMIT, and nothing holds it across the network call a
+// caller makes afterward.
+func (r *PostgresRepository) ClaimNotifiableEvents(ctx context.Context, eventTypes []string, visibilityTimeout time.Duration, limit int) ([]domain.NotifiableEvent, error) {
+	rows, err := r.conn.QueryContext(ctx, `
+		WITH candidates AS (
+			SELECT e.id AS event_id
+			FROM schedule_events e
+			LEFT JOIN notification_log n ON n.schedule_event_id = e.id
+			WHERE e.event_type = ANY($1)
+			  AND (
+				n.id IS NULL
+				OR (n.status = 'pending' AND n.last_attempt_at < now() - ($2 * interval '1 second'))
+			  )
+			ORDER BY e.id
+			LIMIT $3
+			FOR UPDATE OF e SKIP LOCKED
+		), claimed AS (
+			INSERT INTO notification_log (schedule_event_id, status, attempts, last_attempt_at)
+			SELECT event_id, 'pending', 1, now() FROM candidates
+			ON CONFLICT (schedule_event_id) DO UPDATE
+				SET attempts = notification_log.attempts + 1, last_attempt_at = now()
+			RETURNING schedule_event_id
+		)
+		SELECT e.id, e.schedule_id, e.event_type, e.reason_code, e.payload, e.created_at
+		FROM schedule_events e
+		JOIN claimed c ON c.schedule_event_id = e.id
+		ORDER BY e.id`,
+		pqTextArray(eventTypes), visibilityTimeout.Seconds(), limit)
+	if err != nil {
+		return nil, fmt.Errorf("claim notifiable events: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []domain.NotifiableEvent
+	for rows.Next() {
+		var (
+			e      domain.NotifiableEvent
+			reason sql.NullString
+		)
+		if err := rows.Scan(&e.ScheduleEventID, &e.ScheduleID, &e.EventType, &reason, &e.Payload, &e.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan notifiable event: %w", err)
+		}
+		if reason.Valid {
+			v := reason.String
+			e.ReasonCode = &v
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// MarkNotificationSent is documented on Repository.
+func (r *PostgresRepository) MarkNotificationSent(ctx context.Context, scheduleEventID int64, sentAt time.Time) error {
+	_, err := r.conn.ExecContext(ctx, `
+		UPDATE notification_log SET status = 'sent', sent_at = $2
+		WHERE schedule_event_id = $1`, scheduleEventID, sentAt)
+	if err != nil {
+		return fmt.Errorf("mark notification sent: %w", err)
+	}
+	return nil
+}
+
+// MarkNotificationFailed is documented on Repository.
+func (r *PostgresRepository) MarkNotificationFailed(ctx context.Context, scheduleEventID int64, errMsg string, maxAttempts int) error {
+	_, err := r.conn.ExecContext(ctx, `
+		UPDATE notification_log SET
+			last_error = $2,
+			status = CASE WHEN attempts >= $3 THEN 'failed' ELSE 'pending' END
+		WHERE schedule_event_id = $1`, scheduleEventID, errMsg, maxAttempts)
+	if err != nil {
+		return fmt.Errorf("mark notification failed: %w", err)
+	}
+	return nil
 }
 
 func (r *PostgresRepository) ListEvents(ctx context.Context, scheduleID string) ([]domain.ScheduleEvent, error) {

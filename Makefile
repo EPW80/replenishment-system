@@ -62,6 +62,9 @@ materialize: ## Top up the planned-occurrence horizon for every active schedule
 sweep: ## End timed pauses that have come due
 	go run ./cmd/sweep
 
+notify: ## Send outstanding Phase 4 transactional emails
+	go run ./cmd/notify
+
 db-up: ## Start the local Postgres 16 container
 	docker compose up -d db
 	@echo "waiting for postgres..."

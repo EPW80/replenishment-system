@@ -8,6 +8,7 @@ package config
 
 import (
 	"fmt"
+	"net/mail"
 	"os"
 	"strconv"
 )
@@ -42,6 +43,15 @@ type Config struct {
 	// ServiceAPIKey is the credential a trusted backend presents to create schedules
 	// at checkout, where there is no customer session to mint a token from. Required.
 	ServiceAPIKey string
+
+	// PostmarkAPIKey, NotificationFromAddress and NotificationSupportContact
+	// (spec §7, Phase 4) are read here but validated only by cmd/notify, not by
+	// Load itself: cmd/cadenceos, cmd/materialize, cmd/sweep and cmd/migrate all
+	// call Load and none of them sends email, so requiring these across the board
+	// would force every deployment to configure Postmark just to run a migration.
+	PostmarkAPIKey             string
+	NotificationFromAddress    string
+	NotificationSupportContact string
 }
 
 // minSecretLength is the shortest credential this service will start with.
@@ -66,6 +76,10 @@ func Load() (Config, error) {
 		PortalJWTIssuer:    envOr("PORTAL_JWT_ISSUER", "cadenceos-portal"),
 		PortalJWTAudience:  envOr("PORTAL_JWT_AUDIENCE", "cadenceos"),
 		ServiceAPIKey:      os.Getenv("SERVICE_API_KEY"),
+
+		PostmarkAPIKey:             os.Getenv("POSTMARK_API_KEY"),
+		NotificationFromAddress:    os.Getenv("NOTIFICATION_FROM_ADDRESS"),
+		NotificationSupportContact: os.Getenv("NOTIFICATION_SUPPORT_CONTACT"),
 	}
 
 	if c.DatabaseURL == "" {
@@ -117,6 +131,25 @@ func requireSecret(key, value string) error {
 	}
 	if len(value) < minSecretLength {
 		return fmt.Errorf("%s must be at least %d characters", key, minSecretLength)
+	}
+	return nil
+}
+
+// RequireNotifications validates the Phase 4 fields Load leaves unchecked.
+// cmd/notify calls this itself, since it is the only binary that needs them.
+//
+// PostmarkAPIKey is checked for non-empty only, not via requireSecret: Postmark
+// server tokens are UUIDs, so the 32-character minimum would pass coincidentally
+// rather than meaningfully, the way it does for an HS256 key.
+func (c Config) RequireNotifications() error {
+	if c.PostmarkAPIKey == "" {
+		return fmt.Errorf("POSTMARK_API_KEY is required")
+	}
+	if _, err := mail.ParseAddress(c.NotificationFromAddress); err != nil {
+		return fmt.Errorf("NOTIFICATION_FROM_ADDRESS is not a valid address: %w", err)
+	}
+	if c.NotificationSupportContact == "" {
+		return fmt.Errorf("NOTIFICATION_SUPPORT_CONTACT is required")
 	}
 	return nil
 }

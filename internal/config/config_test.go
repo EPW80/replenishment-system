@@ -119,4 +119,45 @@ func TestLoad(t *testing.T) {
 			t.Errorf("overrides not applied: %+v", c)
 		}
 	})
+
+	// cmd/cadenceos, cmd/materialize, cmd/sweep and cmd/migrate all call Load and none
+	// of them sends email -- requiring Postmark config across the board would force
+	// every deployment to configure it just to run a migration. Only cmd/notify needs
+	// it, via RequireNotifications below.
+	t.Run("does not require the notification fields", func(t *testing.T) {
+		setRequired(t)
+		if _, err := Load(); err != nil {
+			t.Fatalf("Load without any POSTMARK_*/NOTIFICATION_* set: %v", err)
+		}
+	})
+}
+
+func TestRequireNotifications(t *testing.T) {
+	valid := Config{
+		PostmarkAPIKey:             "11111111-2222-3333-4444-555555555555",
+		NotificationFromAddress:    "orders@example.com",
+		NotificationSupportContact: "support@example.com",
+	}
+
+	if err := valid.RequireNotifications(); err != nil {
+		t.Fatalf("valid config rejected: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name  string
+		patch func(*Config)
+	}{
+		{"missing api key", func(c *Config) { c.PostmarkAPIKey = "" }},
+		{"missing from address", func(c *Config) { c.NotificationFromAddress = "" }},
+		{"malformed from address", func(c *Config) { c.NotificationFromAddress = "not-an-address" }},
+		{"missing support contact", func(c *Config) { c.NotificationSupportContact = "" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := valid
+			tc.patch(&c)
+			if err := c.RequireNotifications(); err == nil {
+				t.Error("expected an error")
+			}
+		})
+	}
 }

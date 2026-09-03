@@ -1,0 +1,7 @@
+{{define "subject"}}Your recurring order has been paused{{end}}
+{{define "body"}}
+<p>Your recurring order has been paused. No further orders will be placed until it
+resumes.</p>
+{{if .PausedUntil}}<p>It's scheduled to resume automatically on {{.PausedUntil}}.</p>{{else}}<p>It will stay paused until you resume it.</p>{{end}}
+<p>Questions? Contact {{.SupportContact}}.</p>
+{{end}}

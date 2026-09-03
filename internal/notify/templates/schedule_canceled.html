@@ -1,0 +1,6 @@
+{{define "subject"}}Your recurring order has been canceled{{end}}
+{{define "body"}}
+<p>Your recurring order has been canceled{{if .ReasonText}} ({{.ReasonText}}){{end}}.
+No further orders will be placed.</p>
+<p>Changed your mind? Contact {{.SupportContact}} to set up a new one.</p>
+{{end}}
