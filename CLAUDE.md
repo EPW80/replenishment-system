@@ -37,8 +37,8 @@ agreeing and the AI review gate loses its reference point. Every command above i
 definition of what "lint" means, not two.
 
 Supporting targets: `make security` (dependency audit), `make migrate` (apply
-migrations), `make materialize` (run the occurrence horizon job), `make db-up` /
-`make db-down` (local Postgres).
+migrations), `make materialize` (run the occurrence horizon job), `make sweep` (end
+timed pauses that have come due), `make db-up` / `make db-down` (local Postgres).
 
 ## Layout
 
@@ -46,6 +46,7 @@ migrations), `make materialize` (run the occurrence horizon job), `make db-up` /
 cmd/cadenceos/         Service entrypoint: HTTP server, graceful shutdown, /healthz
 cmd/migrate/           Applies pending migrations (deploy step and CI)
 cmd/materialize/       Nightly occurrence-horizon job (spec §5 step 1)
+cmd/sweep/             Nightly pass that ends timed pauses (spec §6 resume)
 internal/auth/         Credential verification: portal JWTs and the service key.
                        Turns a credential into a Principal; nothing downstream
                        learns how callers are authenticated.
@@ -54,6 +55,10 @@ internal/domain/       Entities and pure cadence math. No I/O — keeps the date
 internal/store/        Data access (sqlc + pgx) behind a Repository interface
 internal/store/migrations/   goose SQL migrations
 internal/materialize/  Occurrence horizon job, behind a Queue interface
+internal/sweep/        Periodic passes that move schedules forward with no
+                       customer action. Every transition still goes through
+                       internal/schedule, so the row lock and audit event are
+                       identical; only the recorded actor differs.
 internal/httpapi/      HTTP handlers and middleware
 internal/config/       Environment-driven configuration
 internal/compliance/   Forbidden-identifier guard (see below) and its test

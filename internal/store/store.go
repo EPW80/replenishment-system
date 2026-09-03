@@ -47,6 +47,19 @@ type Repository interface {
 	GetScheduleForUpdate(ctx context.Context, id string, scope Scope) (domain.Schedule, error)
 	ListSchedulesByCustomer(ctx context.Context, customerID string) ([]domain.Schedule, error)
 	ListActiveSchedules(ctx context.Context) ([]domain.Schedule, error)
+
+	// ListSchedulesDueToResume returns paused schedules whose paused_until has come
+	// due, for the sweep that ends a timed pause.
+	//
+	// It selects one day wider than asked, because "due" is a question about the
+	// customer's calendar and this query only knows the run date. A schedule in a
+	// timezone ahead of the run date is already on its resume day while UTC is not,
+	// so the extra day is what keeps it from waiting an entire cycle. The caller
+	// narrows the candidates against each schedule's own timezone, the same way
+	// Pause validated the date going in.
+	//
+	// A NULL paused_until is an indefinite pause and is never returned.
+	ListSchedulesDueToResume(ctx context.Context, on domain.Date) ([]domain.Schedule, error)
 	ListScheduleItems(ctx context.Context, scheduleID string, scope Scope) ([]domain.ScheduleItem, error)
 	UpdateScheduleNextRun(ctx context.Context, scheduleID string, next *domain.Date) error
 
@@ -285,6 +298,18 @@ func (r *PostgresRepository) ListSchedulesByCustomer(ctx context.Context, custom
 
 func (r *PostgresRepository) ListActiveSchedules(ctx context.Context) ([]domain.Schedule, error) {
 	return r.querySchedules(ctx, `WHERE status = 'active' ORDER BY next_run_date NULLS FIRST, created_at`)
+}
+
+func (r *PostgresRepository) ListSchedulesDueToResume(ctx context.Context, on domain.Date) ([]domain.Schedule, error) {
+	// paused_until IS NOT NULL is not redundant with the <= comparison -- it says in
+	// the query what the contract promises, so an indefinite pause cannot start
+	// resuming itself if this predicate is ever edited.
+	return r.querySchedules(ctx,
+		`WHERE status = 'paused'
+		   AND paused_until IS NOT NULL
+		   AND paused_until <= $1
+		 ORDER BY paused_until, created_at`,
+		on.AddDays(1).ToTime())
 }
 
 func (r *PostgresRepository) ListScheduleItems(ctx context.Context, scheduleID string, scope Scope) ([]domain.ScheduleItem, error) {
