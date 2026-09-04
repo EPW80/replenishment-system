@@ -68,22 +68,53 @@ jobs:
           ref: ${{ inputs.commit-sha }}
           persist-credentials: false
 
-      # ------------------------------------------------------------------
-      # CUSTOMIZE: replace this step with the real deploy command.
+      # Same mechanism as staging-deploy.yml; read the notes there on why migrations
+      # do not run on this runner and on what the webhook actually deploys.
       #
-      # Deploy the artifact verified on staging where the platform allows it --
-      # rebuilding means production runs a build nobody tested.
+      # ON REBUILDING: the stub this replaced asked for the artifact verified on
+      # staging to be promoted, because rebuilding means production runs a build
+      # nobody tested. Coolify's deploy webhook builds from git rather than promoting
+      # an image, so this rebuilds the same source instead. That is a real, accepted
+      # deviation, not an oversight: the inputs are identical (same commit, same
+      # Dockerfile, pinned base images), and the guard against a build that differs
+      # anyway is production-health-check asserting the served commit. Promoting a
+      # registry image is the better shape if this ever moves to one.
       #
-      # Must set its url output:
-      #   echo "url=https://example.com" >> "$GITHUB_OUTPUT"
-      #
-      # If the release includes a migration, it is applied here, and the record's
-      # database_migration and rollback_safe values must already reflect that.
-      #
-      # Fails on purpose -- see the note in staging-deploy.yml.
-      # ------------------------------------------------------------------
+      # If the release includes a migration it is applied by the Coolify
+      # pre-deployment command, and the record's database_migration and rollback_safe
+      # values must already reflect that.
       - name: Deploy to production
         id: deploy
+        env:
+          WEBHOOK_URL: ${{ secrets.COOLIFY_DEPLOY_WEBHOOK_URL }}
+          API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          APP_URL: ${{ vars.APP_URL }}
         run: |
-          echo "::error::Production deploy is not configured. Replace this step in .github/workflows/production-deploy.yml"
-          exit 1
+          set -u
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "::error::COOLIFY_DEPLOY_WEBHOOK_URL is not set on this Environment."
+            exit 1
+          fi
+          if [ -z "$API_TOKEN" ]; then
+            echo "::error::COOLIFY_API_TOKEN is not set on this Environment."
+            exit 1
+          fi
+          if [ -z "$APP_URL" ]; then
+            echo "::error::APP_URL variable is not set on this Environment. The health check has no target without it."
+            exit 1
+          fi
+
+          # curl still prints %{http_code} (as 000) when the connection itself fails,
+          # so the fallback assigns rather than appends -- "|| echo 000" would
+          # concatenate onto that and report a nonsense 000000.
+          BODY_FILE="$(mktemp)"
+          CODE="$(curl -sS -o "$BODY_FILE" -w '%{http_code}' --max-time 60 \
+            -X POST -H "Authorization: Bearer $API_TOKEN" "$WEBHOOK_URL" 2>>"$BODY_FILE")" || CODE=000
+
+          if [ "$CODE" != "200" ] && [ "$CODE" != "201" ] && [ "$CODE" != "202" ]; then
+            echo "::error::Coolify deploy webhook returned HTTP $CODE"
+            sed -n '1,20p' "$BODY_FILE"
+            exit 1
+          fi
+          echo "Deployment queued (HTTP $CODE)."
+          echo "url=$APP_URL" >> "$GITHUB_OUTPUT"

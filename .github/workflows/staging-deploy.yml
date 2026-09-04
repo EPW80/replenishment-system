@@ -53,23 +53,58 @@ jobs:
           ref: ${{ inputs.commit-sha }}
           persist-credentials: false
 
-      # ------------------------------------------------------------------
-      # CUSTOMIZE: replace this step with the real deploy command.
+      # Triggers a Coolify deployment for this application and hands the health check
+      # a URL to probe. It does not wait for the rollout: the webhook returns as soon
+      # as the deployment is queued, and staging-health-check polls until the endpoint
+      # reports the expected SHA, which is the real completion signal.
       #
-      # It must set its url output so staging-health-check has a target:
-      #   echo "url=https://staging.example.com" >> "$GITHUB_OUTPUT"
+      # MIGRATIONS DO NOT RUN HERE, deliberately. Applying them from this runner would
+      # mean the production database accepts connections from GitHub's IP ranges and a
+      # long-lived DATABASE_URL lives as a GitHub secret -- the exact exposure ADR 0011
+      # rejected for the nightly jobs. `migrate` runs as a Coolify pre-deployment
+      # command inside the deployment's own network, where the credential already is.
+      # See docs/SCHEDULED_JOBS.md and docs/adr/0011.
       #
-      # Read Environment secrets here, in this job:
-      #   env:
-      #     TOKEN: ${{ secrets.YOUR_SECRET_NAME }}
+      # WHAT THIS DEPLOYS: the webhook builds whatever commit the branch Coolify tracks
+      # currently points at -- it does not take a SHA. That is why the health check
+      # asserts on expected-sha rather than trusting this step's exit code: if the tip
+      # moved, or the build was stale, the probe reports a different commit and the
+      # gate fails. Keep Coolify pointed at the branch being deployed.
       #
-      # This fails on purpose. The Coolify deploy mechanism and its credentials do
-      # not exist yet, and a step that exited 0 without deploying would let
-      # production-health-check pass against the PREVIOUSLY deployed version --
-      # reporting a successful release of code that was never shipped.
-      # ------------------------------------------------------------------
+      # Values reach the shell through env, never interpolated into the run: script --
+      # interpolation happens before the shell sees the line. See docs/WORKFLOWS.md.
       - name: Deploy to staging
         id: deploy
+        env:
+          WEBHOOK_URL: ${{ secrets.COOLIFY_DEPLOY_WEBHOOK_URL }}
+          API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          APP_URL: ${{ vars.APP_URL }}
         run: |
-          echo "::error::Staging deploy is not configured. Replace this step in .github/workflows/staging-deploy.yml"
-          exit 1
+          set -u
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "::error::COOLIFY_DEPLOY_WEBHOOK_URL is not set on this Environment."
+            exit 1
+          fi
+          if [ -z "$API_TOKEN" ]; then
+            echo "::error::COOLIFY_API_TOKEN is not set on this Environment."
+            exit 1
+          fi
+          if [ -z "$APP_URL" ]; then
+            echo "::error::APP_URL variable is not set on this Environment. The health check has no target without it."
+            exit 1
+          fi
+
+          # curl still prints %{http_code} (as 000) when the connection itself fails,
+          # so the fallback assigns rather than appends -- "|| echo 000" would
+          # concatenate onto that and report a nonsense 000000.
+          BODY_FILE="$(mktemp)"
+          CODE="$(curl -sS -o "$BODY_FILE" -w '%{http_code}' --max-time 60 \
+            -X POST -H "Authorization: Bearer $API_TOKEN" "$WEBHOOK_URL" 2>>"$BODY_FILE")" || CODE=000
+
+          if [ "$CODE" != "200" ] && [ "$CODE" != "201" ] && [ "$CODE" != "202" ]; then
+            echo "::error::Coolify deploy webhook returned HTTP $CODE"
+            sed -n '1,20p' "$BODY_FILE"
+            exit 1
+          fi
+          echo "Deployment queued (HTTP $CODE)."
+          echo "url=$APP_URL" >> "$GITHUB_OUTPUT"
