@@ -1,0 +1,14 @@
+# The build needs source and go.mod/go.sum only. Everything below either bloats the
+# context, leaks local state into the image, or would invalidate the layer cache on
+# every run.
+.git
+.github
+.postgres-data
+.env
+.env.*
+bin/
+coverage.out
+coverage.html
+docs/
+releases/
+*.md
