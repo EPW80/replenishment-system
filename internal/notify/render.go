@@ -3,7 +3,6 @@ package notify
 import (
 	"bytes"
 	"embed"
-	"encoding/json"
 	"fmt"
 	"html/template"
 
@@ -59,14 +58,6 @@ type templateData struct {
 	SupportContact string
 }
 
-// eventPayload is the subset of each event type's JSON payload this package reads.
-// Only the fields a given event type actually writes will be non-zero; see
-// internal/schedule/service.go for the shapes (schedule.paused: occurrences_canceled,
-// paused_until; schedule.resumed: anchor_date, interval_days).
-type eventPayload struct {
-	PausedUntil string `json:"paused_until"`
-}
-
 // render produces the subject and HTML body for one claimed event.
 func render(e domain.NotifiableEvent, s domain.Schedule, items []domain.ScheduleItem, supportContact string) (subject, body string, err error) {
 	tmpl, ok := templates[e.EventType]
@@ -85,16 +76,13 @@ func render(e domain.NotifiableEvent, s domain.Schedule, items []domain.Schedule
 	for _, it := range items {
 		data.Items = append(data.Items, itemData{SKU: it.SKU, Quantity: it.Quantity})
 	}
-
-	var p eventPayload
-	if len(e.Payload) > 0 {
-		// A malformed payload should not stop the send — the schedule fields above
-		// already carry everything a template strictly needs, and an event this
-		// package itself wrote should never fail to parse. Render with what parsed
-		// rather than fail the whole notification over an inessential field.
-		_ = json.Unmarshal(e.Payload, &p)
+	// From the freshly-fetched schedule, not the event's payload: s reflects the
+	// schedule's current state at send time, while the payload is a snapshot from
+	// whenever the event was recorded. A reclaimed, retried, or simply delayed send
+	// must not describe a paused_until that a later transition already changed.
+	if s.PausedUntil != nil {
+		data.PausedUntil = s.PausedUntil.String()
 	}
-	data.PausedUntil = p.PausedUntil
 
 	if e.ReasonCode != nil {
 		data.ReasonText = cancellationReasonText[*e.ReasonCode]
