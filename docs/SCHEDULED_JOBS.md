@@ -60,17 +60,28 @@ Create a scheduled task on the CadenceOS application, per environment:
 | --- | --- |
 | Name | `nightly` |
 | Command | `./scripts/nightly.sh` |
-| Frequency | `0 7 * * *` |
+| Frequency | `0 10 * * *` |
 | Container | the CadenceOS app container |
 
 The task inherits the application's environment, so `DATABASE_URL` needs no separate
 configuration and the production credential never leaves Coolify's network.
 
-**On the schedule:** `0 7 * * *` is 07:00 UTC — chosen to sit outside US business hours
-year-round rather than on a round local number, since the cron runs in UTC and would
-otherwise shift an hour against the merchant's day at each DST transition. The jobs
-themselves are unaffected by that: each schedule's dates are computed in the customer's
-own timezone (`Service.today`), not the scheduler's.
+**On the schedule:** `0 10 * * *` is 10:00 UTC. The cron runs in UTC, so the hour is
+chosen to be outside US business hours year-round *and* to keep a wide margin from
+local midnight in the US zones, which is the part that actually matters.
+
+An hour sitting on a local date boundary makes the run's own date ambiguous: a little
+clock skew, a slow container start, or a DST shift moves it across midnight and the
+job computes a different day than the one intended. 10:00 UTC is 03:00 PDT / 02:00 PST
+on the west coast and 06:00 EDT / 05:00 EST on the east, so it stays hours clear of
+midnight in both DST states.
+
+For contrast, 07:00 UTC — the obvious "middle of the night" pick — is exactly 00:00 PDT
+in summer and 23:00 PST *the previous day* in winter. Do not use it.
+
+The jobs' own date arithmetic is separate from this: each schedule's dates are computed
+in the customer's own timezone (`Service.today`), not the scheduler's. The hour above
+is about the run being unambiguous, not about the cadence math.
 
 Anything other than the frequency belongs in this repository rather than in the Coolify
 UI. If the two passes need to change, change `scripts/nightly.sh`.
