@@ -31,7 +31,7 @@ type Config struct {
 	MaterializeHorizon int
 
 	// PortalJWTSecret is the HS256 key the WP mu-plugin signs customer tokens with
-	// (spec §4). Required.
+	// (spec §4). Required by RequireAuth, not by Load.
 	PortalJWTSecret string
 
 	// PortalJWTIssuer and PortalJWTAudience are the iss and aud claims a customer
@@ -41,14 +41,15 @@ type Config struct {
 	PortalJWTAudience string
 
 	// ServiceAPIKey is the credential a trusted backend presents to create schedules
-	// at checkout, where there is no customer session to mint a token from. Required.
+	// at checkout, where there is no customer session to mint a token from. Required
+	// by RequireAuth, not by Load.
 	ServiceAPIKey string
 
 	// PostmarkAPIKey, NotificationFromAddress and NotificationSupportContact
 	// (spec §7, Phase 4) are read here but validated only by cmd/notify, not by
-	// Load itself: cmd/cadenceos, cmd/materialize, cmd/sweep and cmd/migrate all
-	// call Load and none of them sends email, so requiring these across the board
-	// would force every deployment to configure Postmark just to run a migration.
+	// Load itself: cmd/cadenceos, cmd/materialize and cmd/sweep all call Load and
+	// none of them sends email, so requiring these across the board would force
+	// every deployment to configure Postmark just to top up an occurrence horizon.
 	PostmarkAPIKey             string
 	NotificationFromAddress    string
 	NotificationSupportContact string
@@ -65,7 +66,14 @@ const minSecretLength = 32
 //
 // It returns an error rather than falling back to a default for DatabaseURL: a
 // service that silently starts against the wrong database is worse than one that
-// refuses to start.
+// refuses to start. DatabaseURL is the only value Load requires, because it is the
+// only one every binary uses.
+//
+// The credential fields are read here but validated by RequireAuth, which
+// cmd/cadenceos calls, for the same reason the Postmark fields are validated by
+// RequireNotifications in cmd/notify: cmd/materialize and cmd/sweep authenticate
+// nobody, and requiring an HS256 signing key to top up an occurrence horizon means
+// handing a scheduled job two standing credentials it never presents.
 func Load() (Config, error) {
 	c := Config{
 		DatabaseURL:        os.Getenv("DATABASE_URL"),
@@ -84,16 +92,6 @@ func Load() (Config, error) {
 
 	if c.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
-	}
-
-	// The credentials are required rather than defaulted for the same reason as
-	// DATABASE_URL, one step further: a service that starts without them serves every
-	// schedule to anyone who asks. Refusing to boot is the only safe default.
-	if err := requireSecret("PORTAL_JWT_SECRET", c.PortalJWTSecret); err != nil {
-		return Config{}, err
-	}
-	if err := requireSecret("SERVICE_API_KEY", c.ServiceAPIKey); err != nil {
-		return Config{}, err
 	}
 
 	if v := os.Getenv("PORT"); v != "" {
@@ -133,6 +131,22 @@ func requireSecret(key, value string) error {
 		return fmt.Errorf("%s must be at least %d characters", key, minSecretLength)
 	}
 	return nil
+}
+
+// RequireAuth validates the credentials that verify an inbound caller (spec §4).
+// cmd/cadenceos calls this itself, since it is the only binary that authenticates
+// anyone — the batch jobs reach the database directly and have no callers to check.
+//
+// The service must still refuse to boot without these. A running HTTP server with no
+// verifiable credentials serves every schedule to anyone who asks, so this is called
+// before the listener binds, and a failure is fatal rather than a downgrade to an
+// unauthenticated mode. Moving the check here narrows who must hold the secrets; it
+// does not make them optional for the service.
+func (c Config) RequireAuth() error {
+	if err := requireSecret("PORTAL_JWT_SECRET", c.PortalJWTSecret); err != nil {
+		return err
+	}
+	return requireSecret("SERVICE_API_KEY", c.ServiceAPIKey)
 }
 
 // RequireNotifications validates the Phase 4 fields Load leaves unchecked.

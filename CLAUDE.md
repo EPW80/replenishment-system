@@ -38,7 +38,15 @@ definition of what "lint" means, not two.
 
 Supporting targets: `make security` (dependency audit), `make migrate` (apply
 migrations), `make materialize` (run the occurrence horizon job), `make sweep` (end
-timed pauses that have come due), `make db-up` / `make db-down` (local Postgres).
+timed pauses that have come due), `make notify` (send outstanding transactional
+email), `make nightly` (sweep then materialize, exactly as the scheduler runs them),
+`make db-up` / `make db-down` (local Postgres).
+
+The nightly pair runs in production as a Coolify scheduled task invoking
+`scripts/nightly.sh`. It takes `DATABASE_URL` and nothing else -- do not give a
+scheduled job the auth secrets, which only `cmd/cadenceos` uses. See
+[`docs/SCHEDULED_JOBS.md`](docs/SCHEDULED_JOBS.md) and
+[`docs/adr/0011`](docs/adr/0011-coolify-scheduled-tasks-for-nightly-jobs.md).
 
 ## Layout
 
@@ -63,6 +71,7 @@ internal/httpapi/      HTTP handlers and middleware
 internal/config/       Environment-driven configuration
 internal/compliance/   Forbidden-identifier guard (see below) and its test
 internal/testsupport/  Test-only database fixtures (private schema per test)
+scripts/               Operational entrypoints invoked by the scheduler and by make
 docs/                  Lifecycle, workflow, and release-metadata documentation
 docs/adr/              Architecture decision records
 docs/replenishment-service-spec.md   The technical spec this service implements

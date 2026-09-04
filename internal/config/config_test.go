@@ -10,12 +10,11 @@ func TestLoad(t *testing.T) {
 	const validSecret = "a-test-secret-of-at-least-32-characters"
 
 	// setRequired supplies every variable Load insists on, so each subtest can vary
-	// the one thing it is actually about.
+	// the one thing it is actually about. That is DATABASE_URL alone: the auth
+	// credentials are RequireAuth's to check, and TestRequireAuth covers them.
 	setRequired := func(t *testing.T) {
 		t.Helper()
 		t.Setenv("DATABASE_URL", validURL)
-		t.Setenv("PORTAL_JWT_SECRET", validSecret)
-		t.Setenv("SERVICE_API_KEY", validSecret)
 	}
 
 	t.Run("requires DATABASE_URL", func(t *testing.T) {
@@ -62,36 +61,28 @@ func TestLoad(t *testing.T) {
 		}
 	})
 
-	t.Run("requires the auth credentials", func(t *testing.T) {
-		// A service that starts without these serves every schedule to anyone who
-		// asks. Refusing to boot is the only safe default, so each one is checked
-		// missing and too-short.
-		for _, key := range []string{"PORTAL_JWT_SECRET", "SERVICE_API_KEY"} {
-			t.Run(key+" missing", func(t *testing.T) {
-				setRequired(t)
-				t.Setenv(key, "")
-				if _, err := Load(); err == nil {
-					t.Errorf("expected an error when %s is unset", key)
-				}
-			})
-			t.Run(key+" too short", func(t *testing.T) {
-				setRequired(t)
-				t.Setenv(key, "short")
-				if _, err := Load(); err == nil {
-					t.Errorf("expected an error when %s is below the minimum length", key)
-				}
-			})
-			t.Run(key+" value never appears in the error", func(t *testing.T) {
-				setRequired(t)
-				t.Setenv(key, "tooshort-but-secret")
-				_, err := Load()
-				if err == nil {
-					t.Fatalf("expected an error for a short %s", key)
-				}
-				if strings.Contains(err.Error(), "tooshort-but-secret") {
-					t.Errorf("%s value leaked into the error: %v", key, err)
-				}
-			})
+	// cmd/materialize and cmd/sweep authenticate nobody, so Load must not demand an
+	// HS256 signing key from a job that only tops up an occurrence horizon. The
+	// service still refuses to boot without them -- see TestRequireAuth.
+	t.Run("does not require the auth credentials", func(t *testing.T) {
+		setRequired(t)
+		t.Setenv("PORTAL_JWT_SECRET", "")
+		t.Setenv("SERVICE_API_KEY", "")
+		if _, err := Load(); err != nil {
+			t.Fatalf("Load without the auth credentials: %v", err)
+		}
+	})
+
+	t.Run("still reads the auth credentials when present", func(t *testing.T) {
+		setRequired(t)
+		t.Setenv("PORTAL_JWT_SECRET", validSecret)
+		t.Setenv("SERVICE_API_KEY", validSecret)
+		c, err := Load()
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if c.PortalJWTSecret != validSecret || c.ServiceAPIKey != validSecret {
+			t.Error("Load did not carry the auth credentials through to the Config")
 		}
 	})
 
@@ -120,16 +111,63 @@ func TestLoad(t *testing.T) {
 		}
 	})
 
-	// cmd/cadenceos, cmd/materialize, cmd/sweep and cmd/migrate all call Load and none
-	// of them sends email -- requiring Postmark config across the board would force
-	// every deployment to configure it just to run a migration. Only cmd/notify needs
-	// it, via RequireNotifications below.
+	// cmd/cadenceos, cmd/materialize and cmd/sweep all call Load and none of them
+	// sends email -- requiring Postmark config across the board would force every
+	// deployment to configure it just to top up an occurrence horizon. Only
+	// cmd/notify needs it, via RequireNotifications below.
 	t.Run("does not require the notification fields", func(t *testing.T) {
 		setRequired(t)
 		if _, err := Load(); err != nil {
 			t.Fatalf("Load without any POSTMARK_*/NOTIFICATION_* set: %v", err)
 		}
 	})
+}
+
+func TestRequireAuth(t *testing.T) {
+	const validSecret = "a-test-secret-of-at-least-32-characters"
+
+	valid := Config{PortalJWTSecret: validSecret, ServiceAPIKey: validSecret}
+
+	if err := valid.RequireAuth(); err != nil {
+		t.Fatalf("RequireAuth on a complete config: %v", err)
+	}
+
+	// The check moved out of Load; it did not go away. A service that starts without
+	// these serves every schedule to anyone who asks, so each credential is checked
+	// missing and too-short, exactly as Load used to.
+	for _, key := range []string{"PORTAL_JWT_SECRET", "SERVICE_API_KEY"} {
+		// withSecret returns a config whose named credential is set to value and
+		// whose other credential is valid.
+		withSecret := func(value string) Config {
+			c := valid
+			if key == "PORTAL_JWT_SECRET" {
+				c.PortalJWTSecret = value
+			} else {
+				c.ServiceAPIKey = value
+			}
+			return c
+		}
+
+		t.Run(key+" missing", func(t *testing.T) {
+			if err := withSecret("").RequireAuth(); err == nil {
+				t.Errorf("expected an error when %s is unset", key)
+			}
+		})
+		t.Run(key+" too short", func(t *testing.T) {
+			if err := withSecret("short").RequireAuth(); err == nil {
+				t.Errorf("expected an error when %s is below the minimum length", key)
+			}
+		})
+		t.Run(key+" value never appears in the error", func(t *testing.T) {
+			err := withSecret("tooshort-but-secret").RequireAuth()
+			if err == nil {
+				t.Fatalf("expected an error for a short %s", key)
+			}
+			if strings.Contains(err.Error(), "tooshort-but-secret") {
+				t.Errorf("%s value leaked into the error: %v", key, err)
+			}
+		})
+	}
 }
 
 func TestRequireNotifications(t *testing.T) {

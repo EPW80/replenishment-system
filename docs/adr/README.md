@@ -18,6 +18,7 @@ costs), and Status.
 | [0007](0007-row-locking-for-transitions.md) | Serialize transitions with a row lock rather than optimistic retry | Accepted |
 | [0008](0008-origin-order-id-idempotency-for-schedule-creation.md) | `origin_order_id` as schedule creation's idempotency key | Accepted |
 | [0009](0009-idempotency-key-for-skip-and-defer.md) | Client-supplied `idempotency_key` for SkipNext and Defer | Accepted |
+| [0011](0011-coolify-scheduled-tasks-for-nightly-jobs.md) | Run the nightly jobs as a Coolify scheduled task | Accepted |
 
 **"Provisional"** marks a decision taken without access to PartnerOS. The spec (§4)
 directs reuse of whatever PartnerOS settled on rather than introducing a second

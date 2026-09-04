@@ -39,6 +39,13 @@ func run() error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
+	// Checked here rather than in Load: this is the only binary that authenticates a
+	// caller, and it must not bind a port without the credentials to do it. See
+	// config.RequireAuth.
+	if err := cfg.RequireAuth(); err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
 	// Signal-aware from the start, so a shutdown during boot is honoured.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
