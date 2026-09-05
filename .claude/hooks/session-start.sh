@@ -87,7 +87,27 @@ go mod download
 # invented them would put a known-value credential in every session (CLAUDE.md rule 7).
 # `make run` still needs them from .env -- see .env.example.
 
+# Rewritten rather than appended: the hook also fires on resume, clear and compact,
+# and an unconditional append would grow the file by one duplicate line per firing.
+# Only our own DATABASE_URL entry is dropped -- anything else in the file belongs to
+# another writer and is left alone.
+
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+	if [ -f "$CLAUDE_ENV_FILE" ]; then
+		# sed rather than `grep -v ... || true`. grep exits 1 when nothing matched,
+		# which is the ordinary case here, so suppressing that would also suppress
+		# exit 2 -- a real read error -- and the redirect creates the temp file
+		# either way, leaving an empty one for mv to clobber the real file with.
+		# sed exits 0 whether or not it deleted a line, so `set -e` still catches an
+		# actual failure, and the trap discards the temp file before it can replace
+		# anything. The temp file is unique and in the same directory, so the mv is
+		# a rename rather than a copy.
+		tmp="$(mktemp "${CLAUDE_ENV_FILE}.XXXXXX")"
+		trap 'rm -f "$tmp"' EXIT
+		sed '/^export DATABASE_URL=/d' "$CLAUDE_ENV_FILE" > "$tmp"
+		mv "$tmp" "$CLAUDE_ENV_FILE"
+		trap - EXIT
+	fi
 	echo "export DATABASE_URL=\"${DATABASE_URL}\"" >> "$CLAUDE_ENV_FILE"
 	log "exported DATABASE_URL"
 fi
