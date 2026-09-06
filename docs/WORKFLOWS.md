@@ -17,12 +17,11 @@ deploy.yml     (on: workflow_dispatch)
   ├─ production-deploy.yml          ← Environment gate = business approval
   └─ production-health-check.yml
 
-rollback.yml   (on: workflow_dispatch — separate, by human decision)
 ```
 
-`rollback.yml` exposes both `workflow_dispatch` and `workflow_call`. The dispatch
-trigger is the point: it is the only lifecycle workflow a human runs on its own,
-and without it the workflow could not be triggered at all.
+There is no rollback workflow. Rollback is manual — see
+[`LIFECYCLE.md` §12](LIFECYCLE.md#12-rollback) for why, and for what would make it
+automatable.
 
 | Workflow | Triggers | State | Job permissions |
 | --- | --- | --- | --- |
@@ -34,7 +33,6 @@ and without it the workflow could not be triggered at all.
 | `staging-health-check.yml` | call | **Functional** | none |
 | `production-deploy.yml` | call | **Functional** — posts the Coolify webhook; needs the `production` Environment (#40) | `contents: read` |
 | `production-health-check.yml` | call | **Functional** | none |
-| `rollback.yml` | **dispatch** + call | Placeholder — fails; safety checks work | `contents: read` |
 | `pr-checks.yml` | PR, push | Functional caller | `contents: read` |
 | `deploy.yml` | dispatch | Functional caller | `contents: read`; its `validate` job none |
 
@@ -74,8 +72,8 @@ fails:
 - `staging-deploy.yml` — rejects anything that is not a full 40-character SHA.
 - `production-deploy.yml` — rejects a mismatch between `commit-sha` and
   `approved-sha`. Still the authoritative gate; `validate` only fails faster.
-- `rollback.yml` — rejects a malformed SHA, and refuses to run when
-  `rollback-safe` is `false`.
+(`rollback.yml` carried the same kind of guard before it was deleted; rollback is
+now manual, per [`LIFECYCLE.md` §12](LIFECYCLE.md#12-rollback).)
 
 Keep these when you fill in the deploy commands. They are what makes an approval
 refer to a specific version of the code.

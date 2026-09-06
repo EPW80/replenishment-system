@@ -158,8 +158,11 @@ file blocks nothing on its own — keep the Environment rule configured.
 
 ### On `rollback_safe` and `database_migration`
 
-These two carry the most operational risk, because `rollback.yml` reads
-`rollback_safe` and refuses to run when it is `false`.
+These two carry the most operational risk. `rollback_safe` is read by a person
+planning a recovery, not by a workflow — there is no rollback workflow
+([`LIFECYCLE.md` §12](LIFECYCLE.md#12-rollback)) — which makes recording it
+accurately more important rather than less: nothing downstream will refuse to
+proceed on your behalf if it is wrong.
 
 The combinations:
 
@@ -170,18 +173,18 @@ The combinations:
 | `true` | `false` | Destructive or non-backward-compatible migration. Recovery is a human-planned operation. |
 | `false` | `false` | Unusual but valid: a one-way external side effect, e.g. an irreversible third-party call. Explain it in the PR. |
 
-**`rollback_safe` defaults to `false`.** The schema declares that default, the
-example records use it, and `rollback.yml`'s dispatch checkbox starts unticked.
-Rollback is never assumed safe until a project's actual deployment implementation
-demonstrably supports it — until then, the honest value is `false`.
+**`rollback_safe` defaults to `false`.** The schema declares that default and the
+example records use it. Rollback is never assumed safe until a project's actual
+deployment implementation demonstrably supports it — and this one does not yet, so
+until then the honest value is `false`.
 
 Do not flip it to `true` because nothing looked alarming. The question is specific:
 if the previous version were redeployed unchanged right now, would it run correctly
 against the state this release leaves behind?
 
-An incorrect `true` is the dangerous direction — it sends an operator into an
-automated rollback that can lose data. An incorrect `false` only costs a
-conversation.
+An incorrect `true` is the dangerous direction — it tells an operator a redeploy is
+safe when it can lose data, and with rollback manual there is no workflow left to
+refuse on their behalf. An incorrect `false` only costs a conversation.
 
 ---
 
