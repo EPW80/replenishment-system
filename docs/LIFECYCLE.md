@@ -13,8 +13,9 @@ issue
                                       └─> business approval (where required)
                                             └─> production deploy
                                                   └─> production health check
-                                                        └─> rollback (if supported)
 ```
+
+There is no automated rollback step. See §12.
 
 A step "enforced by GitHub" cannot be skipped by editing a file in this
 repository. A step enforced by convention can — those depend on review.
@@ -31,7 +32,7 @@ repository. A step enforced by convention can — those depend on review.
 | Business approval | GitHub | Required reviewers on `production` Environment |
 | Production | GitHub | Environment gate + SHA match check |
 | Health check | GitHub | `deploy.yml` job dependency |
-| Rollback | Human decision | `rollback.yml`, dispatched manually |
+| Rollback | Human decision | Manual — see §12; there is no rollback workflow |
 
 ---
 
@@ -154,21 +155,37 @@ roll back on its own.
 
 ## 12. Rollback
 
-Not chained into `deploy.yml`. A maintainer dispatches `rollback.yml` with the
-last known-good SHA.
+**There is no rollback workflow. Rollback is a manual operation.**
 
-Automatic rollback on a failed health check sounds attractive and is often wrong:
-the health check cannot distinguish "this release is broken" from "a dependency is
-briefly down," and rolling back during a migration can compound the damage.
-Deciding to roll back needs a human who can see the blast radius.
+`rollback.yml` existed as a stub and was deleted, because the deploy mechanism
+cannot do what it promised. Its input was the SHA of the last known-good release,
+but the Coolify deploy webhook takes no commit SHA — it builds whatever the branch
+it tracks currently points at
+([`DEPLOYMENT.md`](DEPLOYMENT.md#what-the-deploy-step-actually-does)). Wiring the
+same webhook into it would have rebuilt *the broken release being rolled back
+from*, and reported success while doing it. During an incident, that is worse than
+having nothing: the guidance this section used to carry — a workflow that pretends
+to roll back is worse than none, because people plan around it — applied to itself.
 
-`rollback.yml` refuses to run when the release's `rollback_safe` is `false`. That
-case — usually a destructive migration — requires human-planned recovery, not a
-redeploy.
+**What to do instead, today.** Recovering means getting the tracked branch back to
+the known-good commit and redeploying it, which is a human-planned operation
+because it means changing shared history. Check the release record's
+`rollback_safe` first; if it is `false` — usually a destructive migration — a
+redeploy is not recovery at all and the database state has to be planned for
+separately.
 
-If the platform cannot roll back at all, delete `rollback.yml` and say so in the
-README. A workflow that pretends to roll back is worse than none, because people
-plan around it.
+**What would make it automatable.** Deploying a per-commit registry image tag
+rather than rebuilding from a branch. Rollback then becomes "deploy tag X," a
+genuine rollback rather than a rebuild of whatever the branch happens to point at.
+[`DEPLOYMENT.md`](DEPLOYMENT.md) already names moving to a registry image as the
+better shape; this is a second reason to want it. Reintroduce a rollback workflow
+when that exists, not before.
+
+**What has not changed:** rollback is still never automatic on a failed health
+check. That was always deliberate and remains right — the health check cannot
+distinguish "this release is broken" from "a dependency is briefly down," and
+rolling back during a migration can compound the damage. Deciding to roll back
+needs a human who can see the blast radius.
 
 ---
 

@@ -84,8 +84,11 @@ Environment. It refers to a specific `commit_sha` recorded in the release
 metadata, and that SHA never changes — see
 [`docs/RELEASE_METADATA.md`](docs/RELEASE_METADATA.md).
 
-If a production deploy goes wrong and the release is marked `rollback_safe`,
-a maintainer runs the `rollback` workflow with the previous good SHA.
+If a production deploy goes wrong, recovery is manual — there is no rollback
+workflow, because the deploy webhook cannot target a specific commit. Check the
+release record's `rollback_safe` first: `false` means a redeploy is not recovery
+and the database state needs planning for separately. See
+[`docs/LIFECYCLE.md`](docs/LIFECYCLE.md#12-rollback).
 
 ---
 

@@ -73,7 +73,7 @@
       "type": "boolean"
     },
     "rollback_safe": {
-      "description": "Whether the previously deployed version can be redeployed over this release without data loss or breakage. Defaults to false: rollback is never assumed safe until a project's actual deployment implementation demonstrably supports it. Must be false for destructive or non-backward-compatible migrations and one-way data backfills. The rollback workflow refuses to run when this is false.",
+      "description": "Whether the previously deployed version can be redeployed over this release without data loss or breakage. Defaults to false: rollback is never assumed safe until a project's actual deployment implementation demonstrably supports it. Must be false for destructive or non-backward-compatible migrations and one-way data backfills. Read by a person planning a recovery, not by a workflow: rollback here is manual, so nothing downstream refuses to proceed when this is false.",
       "type": "boolean",
       "default": false
     },
