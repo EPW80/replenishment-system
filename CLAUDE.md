@@ -9,9 +9,14 @@ Guidance for Claude Code working in this repository.
 - **What this is:** CadenceOS — a standalone scheduling service that turns one-time
   WooCommerce purchases into recurring orders on a customer-controlled cadence, with
   pause, skip, defer, and cadence-change built in.
-- **Stack:** Go (toolchain pinned in `go.mod`), PostgreSQL 16, `river` for the durable
-  queue, `goose` for migrations, `sqlc` + `pgx` for data access. Postmark for
-  transactional email. No framework.
+- **Stack:** Go (toolchain pinned in `go.mod`), PostgreSQL 16, `goose` for migrations,
+  `pgx` for data access. Postmark for transactional email. No framework.
+- **Chosen but not yet adopted:** `river` for the durable queue (ADR 0002) and `sqlc`
+  for typed query code (ADR 0003). Neither is in `go.mod`. Phase 1 materializes
+  synchronously, so `internal/materialize`'s `Queue` interface has no implementation
+  yet -- that is the seam, not an oversight -- and `internal/store` is hand-written SQL
+  over `pgx`. Do not describe either as present-tense stack; both ADRs are provisional
+  pending PartnerOS.
 - **Hosting:** Hetzner via Coolify, alongside PartnerOS. Staging and production are
   separate GitHub Environments; deploy credentials are Environment-scoped secrets.
 - **Owner:** Erik Williams.
@@ -60,7 +65,7 @@ internal/auth/         Credential verification: portal JWTs and the service key.
                        learns how callers are authenticated.
 internal/domain/       Entities and pure cadence math. No I/O — keeps the date
                        arithmetic testable without a database.
-internal/store/        Data access (sqlc + pgx) behind a Repository interface
+internal/store/        Data access (hand-written SQL over pgx) behind a Repository interface
 internal/store/migrations/   goose SQL migrations
 internal/materialize/  Occurrence horizon job, behind a Queue interface
 internal/sweep/        Periodic passes that move schedules forward with no
@@ -75,11 +80,14 @@ scripts/               Operational entrypoints invoked by the scheduler and by m
 docs/                  Lifecycle, workflow, and release-metadata documentation
 docs/adr/              Architecture decision records
 docs/replenishment-service-spec.md   The technical spec this service implements
-releases/              Append-only release metadata records
 ```
 
-Third-party choices (`river`, `goose`, `sqlc`) each sit behind a narrow interface, so
-replacing one is an adapter swap rather than a rewrite. The spec directs reuse of
+`releases/` is not in that tree: it does not exist yet and the first release creates
+it. See [`docs/RELEASE_METADATA.md`](docs/RELEASE_METADATA.md).
+
+Third-party choices (`goose`, `pgx`, and the queue and query-layer choices recorded in
+ADRs 0002 and 0003) each sit behind a narrow interface, so replacing one is an adapter
+swap rather than a rewrite. The spec directs reuse of
 PartnerOS's queue and REST scaffolding; where that was not reachable, the ADRs in
 `docs/adr/` record what was chosen instead and why.
 

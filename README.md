@@ -32,9 +32,22 @@ and the rule is restated in [`CLAUDE.md`](CLAUDE.md).
 
 ## Stack
 
-Go (toolchain pinned in `go.mod`), PostgreSQL 16, `river` (durable queue), `goose`
-(migrations), `sqlc` + `pgx` (data access), Postmark (transactional email). Deployed
-on Hetzner via Coolify.
+Go (toolchain pinned in `go.mod`), PostgreSQL 16, `goose` (migrations), `pgx` (data
+access), Postmark (transactional email). Deployed on Hetzner via Coolify.
+
+Two further choices are recorded but **not yet adopted in the build**, and the
+distinction is worth keeping straight when reading the code:
+
+- **`river`** for the durable queue ([ADR 0002](docs/adr/0002-river-for-durable-queue.md)).
+  Phase 1 runs the materializer synchronously and needs no queue. The `Queue` interface
+  in `internal/materialize` is the seam that makes wiring it in an adapter change
+  rather than a rewrite — it has no implementation yet, on purpose.
+- **`sqlc`** for typed query code ([ADR 0003](docs/adr/0003-goose-migrations-sqlc-pgx.md)).
+  Queries in `internal/store` are hand-written SQL over `pgx` today.
+
+Both ADRs are marked *provisional* for the same reason: the spec (§4) directs reuse of
+whatever PartnerOS settled on, and that codebase was not reachable when they were
+written.
 
 Decision records: [`docs/adr/`](docs/adr/).
 
@@ -101,20 +114,25 @@ Inherited from the Project Helix template and kept deliberately:
 | --- | --- |
 | `lint` / `test` / `build` / `security-check` | Real commands against the Go stack |
 | Health checks | Functional — probe asserts on the deployed commit SHA |
-| Deploy steps | **Placeholders that fail.** See below |
+| Deploy steps | Real — they post the Coolify webhook. **Never yet run:** see below |
+| Rollback | **Placeholder that fails.** See below |
 | Peer approval (`CODEOWNERS`) | **Not operational.** See below |
 | Required status checks | **Not configured.** See below |
 
-Three gates are deliberately incomplete, and each is a decision rather than an
-oversight:
+Four gates are incomplete, and each is a decision rather than an oversight:
 
-- **The deploy steps in `staging-deploy.yml`, `production-deploy.yml`, and
-  `rollback.yml` are placeholders that exit non-zero.** The Coolify deploy mechanism,
-  its credentials, and the `staging` / `production` Environments do not exist yet. A
-  deploy step that exited `0` without deploying would let `production-health-check`
-  pass against the *previously* deployed version, reporting a successful release of
-  code that was never shipped. The SHA-validation and approval-match guards around
-  them are functional and must be kept.
+- **The deploy steps are real, but nothing has been deployed yet.**
+  `staging-deploy.yml` and `production-deploy.yml` post the Coolify deploy webhook;
+  the SHA-validation and approval-match guards around them are functional and must be
+  kept. What is still missing is outside this repository: the `staging` and
+  `production` GitHub Environments, their secrets, and the Coolify application
+  configuration — including `BUILD_SHA`, without which a successful deploy still fails
+  the health check. Tracked in
+  [issue #40](https://github.com/EPW80/replenishment-system/issues/40); the checklist
+  is in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+- **`rollback.yml` still exits non-zero.** Its guards work; the rollback command does
+  not exist, because the Coolify webhook takes no commit SHA — it builds whatever the
+  tracked branch points at. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md#what-the-deploy-step-actually-does).
 - **`CODEOWNERS.example` has not been renamed to `.github/CODEOWNERS`.** GitHub
   silently ignores rules naming a team without write access, which would produce a
   peer-approval gate that appears configured and enforces nothing. See

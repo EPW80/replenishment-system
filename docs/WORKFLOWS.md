@@ -26,13 +26,13 @@ and without it the workflow could not be triggered at all.
 
 | Workflow | Triggers | State | Job permissions |
 | --- | --- | --- | --- |
-| `lint.yml` | call | Placeholder — fails | `contents: read` |
-| `test.yml` | call | Placeholder — fails | `contents: read` |
-| `build.yml` | call | Placeholder — fails | `contents: read` |
-| `security-check.yml` | call | Placeholder — fails | `contents: read` |
-| `staging-deploy.yml` | call | Placeholder — fails; SHA validation works | `contents: read` |
+| `lint.yml` | call | **Functional** — `make lint` | `contents: read` |
+| `test.yml` | call | **Functional** — `make migrate` + `make test` against a `postgres:16` service | `contents: read` |
+| `build.yml` | call | **Functional** — `make build` | `contents: read` |
+| `security-check.yml` | call | **Functional** — `make security` | `contents: read` |
+| `staging-deploy.yml` | call | **Functional** — posts the Coolify webhook; needs the `staging` Environment (#40) | `contents: read` |
 | `staging-health-check.yml` | call | **Functional** | none |
-| `production-deploy.yml` | call | Placeholder — fails; approval check works | `contents: read` |
+| `production-deploy.yml` | call | **Functional** — posts the Coolify webhook; needs the `production` Environment (#40) | `contents: read` |
 | `production-health-check.yml` | call | **Functional** | none |
 | `rollback.yml` | **dispatch** + call | Placeholder — fails; safety checks work | `contents: read` |
 | `pr-checks.yml` | PR, push | Functional caller | `contents: read` |
