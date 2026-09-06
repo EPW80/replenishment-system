@@ -115,7 +115,7 @@ Inherited from the Project Helix template and kept deliberately:
 | `lint` / `test` / `build` / `security-check` | Real commands against the Go stack |
 | Health checks | Functional — probe asserts on the deployed commit SHA |
 | Deploy steps | Real — they post the Coolify webhook. **Never yet run:** see below |
-| Rollback | **Placeholder that fails.** See below |
+| Rollback | **Manual, no workflow.** See below |
 | Peer approval (`CODEOWNERS`) | **Not operational.** See below |
 | Required status checks | **Not configured.** See below |
 
@@ -130,9 +130,13 @@ Four gates are incomplete, and each is a decision rather than an oversight:
   the health check. Tracked in
   [issue #40](https://github.com/EPW80/replenishment-system/issues/40); the checklist
   is in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
-- **`rollback.yml` still exits non-zero.** Its guards work; the rollback command does
-  not exist, because the Coolify webhook takes no commit SHA — it builds whatever the
-  tracked branch points at. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md#what-the-deploy-step-actually-does).
+- **There is no rollback workflow; recovery is manual.** `rollback.yml` was a stub and
+  was deleted rather than wired up, because the deploy webhook takes no commit SHA — it
+  builds whatever the tracked branch points at, so firing it for a rollback would
+  rebuild the broken release and report success. A workflow that pretends to roll back
+  is worse than none, because people plan around it. Deploying a per-commit registry
+  image tag is what would make this automatable. See
+  [`docs/LIFECYCLE.md` §12](docs/LIFECYCLE.md#12-rollback).
 - **`CODEOWNERS.example` has not been renamed to `.github/CODEOWNERS`.** GitHub
   silently ignores rules naming a team without write access, which would produce a
   peer-approval gate that appears configured and enforces nothing. See

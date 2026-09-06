@@ -73,9 +73,8 @@ supply-chain decision — see [`RECOMMENDED_ACTIONS.md`](RECOMMENDED_ACTIONS.md)
 
 ### 6. Deploy workflows
 
-Replace the `CUSTOMIZE` step in `staging-deploy.yml`, `production-deploy.yml`,
-and `rollback.yml`. For the two deploys, also make the step set its `url` output
-so the health checks have a target:
+Replace the `CUSTOMIZE` step in `staging-deploy.yml` and `production-deploy.yml`.
+Both also set a `url` output so the health checks have a target:
 
 ```sh
 echo "url=https://staging.example.com" >> "$GITHUB_OUTPUT"
@@ -296,8 +295,8 @@ usually just redeploying the previous output.
 - Generator, or hand-written HTML. If there is no generator, delete `build.yml`.
 - If there is a generator: its toolchain and version, and the output directory.
 - Where it is hosted. Static hosts differ in whether they keep previous
-  deployments — if yours does, rollback is promoting the previous deployment and
-  `rollback.yml` becomes a single API call. Check before writing anything more
+  deployments — if yours does, rollback is promoting the previous deployment and a
+  rollback workflow becomes a single API call. Check before writing anything more
   complicated.
 - Cache invalidation. Often the only genuinely tricky part: a deploy that
   succeeds while the CDN keeps serving old files looks healthy and is not.
@@ -321,7 +320,7 @@ is a legitimate customization, and better than leaving one that always fails.
 | No build step | Delete `build.yml` + its job in `pr-checks.yml` |
 | No automated tests | Delete `test.yml` + its job; note the gap in the README |
 | No staging environment | Delete `staging-*.yml`; document that releases go straight to production |
-| Platform cannot roll back | Delete `rollback.yml`; state it in the README |
+| Platform cannot roll back | Delete the rollback workflow; state it in the README *(done here — see [`LIFECYCLE.md` §12](LIFECYCLE.md#12-rollback))* |
 | No business approval needed | Keep the Environment gate, set `business_approval_required: false` |
 
 Deleting a gate is a decision worth recording. Say why in the README, so the next
