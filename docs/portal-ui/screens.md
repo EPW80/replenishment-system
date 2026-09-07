@@ -21,13 +21,41 @@ GET /schedules/{id}               -> scheduleResponse
 GET /schedules/{id}/occurrences   -> {"occurrences": [occurrenceResponse, ...]}
 ```
 
-`scheduleResponse` carries `status`, `interval_days`, `anchor_date`, `next_run_date`,
-`timezone`, `discount_pct`, `paused_until`, and `items[]` of `{sku, quantity}`.
-`occurrenceResponse` carries `sequence_no`, `scheduled_for`, `status`, `order_id`.
+`scheduleResponse` carries `id`, `customer_id`, `origin_order_id`, `status`,
+`interval_days`, `anchor_date`, `next_run_date`, `timezone`, `discount_pct`,
+`paused_until`, and `items[]` of `{sku, quantity}`. `next_run_date` and `paused_until`
+are nullable. `occurrenceResponse` carries `sequence_no`, `scheduled_for`, `status`,
+and a nullable `order_id`.
 
 That is the whole vocabulary. Anything a screen shows that is not in those two shapes
 is either computed client-side from them, fetched from WooCommerce, or listed under
 "Not available yet" — there is no third source.
+
+### Request bodies for the six transitions
+
+Every transition is a POST returning the updated `scheduleResponse`. Use that response
+rather than patching local state. The bodies are small and three of them have a
+requirement that is easy to miss, so they are collected here rather than left to the
+screen sections:
+
+| Endpoint | Body | Notes |
+| --- | --- | --- |
+| `POST /schedules/{id}/pause` | `{"paused_until": "2026-11-01"}` or none | absent body is valid — an open-ended pause |
+| `POST /schedules/{id}/resume` | none | |
+| `POST /schedules/{id}/skip` | `{"idempotency_key": "..."}` | **required**, non-empty, ≤200 chars |
+| `POST /schedules/{id}/defer` | `{"days": 7, "idempotency_key": "..."}` | `days` 1–180; key **required**, same bounds |
+| `POST /schedules/{id}/cadence` | `{"interval_days": 42}` | 7–180 |
+| `POST /schedules/{id}/cancel` | `{"reason_code": "too_frequent"}` | code from the closed set |
+
+`skip` and `defer` both reject a missing or empty `idempotency_key` with **400
+`idempotency_key is required`** — `ValidateIdempotencyKey` treats absence as a caller
+bug rather than defaulting it, because the two occurrences it could silently combine
+are not a case to paper over (ADR 0009). Wiring either screen without the field fails
+every request. See the idempotency note in [`components.md`](components.md) for how to
+scope the key to one customer intent.
+
+The handler rejects unknown fields (`DisallowUnknownFields`), so a body carrying an
+extra key is a 400 rather than a silently ignored field.
 
 ### Four things every screen computes client-side
 
@@ -96,7 +124,7 @@ so it is the screen that most needs to be unmissable rather than tasteful.
 | --- | --- |
 | Trigger | the nearest occurrence has `status: "pending"` |
 | Reads | same two calls as screen 1 |
-| Actions out | `POST /schedules/{id}/skip`, `POST /schedules/{id}/defer` |
+| Actions out | `POST /schedules/{id}/skip`, `POST /schedules/{id}/defer` — both require `idempotency_key` |
 
 **This screen is blocked on Phase 2.** Nothing sets `pending` today — `materialize`
 creates `planned` occurrences and stops there; Arm is spec §5 step 2, which
@@ -121,7 +149,7 @@ and must not be merged into one control.
 | | |
 | --- | --- |
 | Change interval | `POST /schedules/{id}/cadence` — `{"interval_days": 42}` |
-| Push back | `POST /schedules/{id}/defer` — `{"days": 7, "idempotency_key": "..."}` |
+| Push back | `POST /schedules/{id}/defer` — `{"days": 7, "idempotency_key": "..."}`, key required |
 | Bounds | interval 7–180 (`domain.MinIntervalDays`/`MaxIntervalDays`); defer 1–180 (`domain.MaxDeferDays`) |
 | Preconditions | cadence: `active` or `paused`; defer: next occurrence not yet executed |
 
