@@ -1,0 +1,22 @@
+{
+  "pages": [
+    { "id": "page-1", "name": "Customer portal" },
+    { "id": "page-2", "name": "Admin" }
+  ],
+  "artboards": [
+    { "file": "Main.dc.html", "page": "page-1", "title": "Portal — active schedule", "x": 0, "y": 0, "w": 880, "h": 1440 },
+    { "file": "Mobile.dc.html", "page": "page-1", "title": "Portal — phone", "x": 980, "y": 0, "w": 390, "h": 900 },
+    { "file": "Armed.dc.html", "page": "page-1", "title": "T−72h window & skip", "x": 1470, "y": 0, "w": 880, "h": 780 },
+    { "file": "Cadence.dc.html", "page": "page-1", "title": "Change interval & defer", "x": 0, "y": 1580, "w": 880, "h": 1000 },
+    { "file": "Interrupted.dc.html", "page": "page-1", "title": "Paused & payment failed", "x": 980, "y": 1580, "w": 880, "h": 1010 },
+    { "file": "Cancel.dc.html", "page": "page-1", "title": "Cancel & reason codes", "x": 1960, "y": 1580, "w": 880, "h": 920 },
+    { "file": "AdminUpcoming.dc.html", "page": "page-2", "title": "Admin — upcoming queue", "x": 0, "y": 0, "w": 1440, "h": 900 },
+    { "file": "AdminFailures.dc.html", "page": "page-2", "title": "Admin — failure queue", "x": 1560, "y": 0, "w": 1440, "h": 900 },
+    { "file": "AdminChurn.dc.html", "page": "page-2", "title": "Admin — churn & cadence", "x": 3120, "y": 0, "w": 1440, "h": 900 }
+  ],
+  "annotations": [
+    { "id": "copy-rule", "page": "page-1", "x": 0, "y": -210, "w": 520, "text": "Copy rule held throughout: \"when to reorder,\" never \"when to take.\"\n\nNo usage rates, no supply projections, no adherence or intake language anywhere on these surfaces — spec §2. Everything the customer sees is framed as shipment timing.\n\nBracketed values are placeholders for facts the spec hasn't settled: the recurring discount %, product names (WooCommerce owns catalog), addresses, order IDs." },
+    { "id": "read-models", "page": "page-2", "x": 0, "y": -190, "w": 560, "text": "Phase 6 surface. The router leaves the admin group deliberately empty today, so none of this is built yet.\n\nThese views read the projected read models in spec §8 — not the write tables. The failure queue's ladder is the T+0 / T+3d / T+7d dunning sequence from §7; the event log strip is the append-only ScheduleEvent table." }
+  ],
+  "launch": { "view": "canvas", "page": "page-1" }
+}

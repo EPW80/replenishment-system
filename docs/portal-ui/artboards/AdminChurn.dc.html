@@ -1,0 +1,207 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Public+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #FAF8F5; color: #1F1C17; font-family: 'Public Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #9C5B36; text-decoration: none; }
+    a:hover { color: #7E4829; text-decoration: underline; }
+    .mono { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; }
+    .bar { height: 14px; border-radius: 0 4px 4px 0; background: #9C5B36; }
+    .col { width: 100%; border-radius: 4px 4px 0 0; background: #9C5B36; }
+  </style>
+</helmet>
+
+<div style="display: flex; min-height: 900px; background: #FAF8F5;">
+
+  <div style="width: 228px; flex-shrink: 0; background: #F3EFE9; border-right: 1px solid #E4DED4; display: flex; flex-direction: column; justify-content: space-between; padding: 22px 0;">
+    <div style="display: flex; flex-direction: column; gap: 26px;">
+      <div style="padding: 0 20px; display: flex; align-items: center; gap: 10px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9C5B36" stroke-width="1.8" stroke-linecap="round"><path d="M4 15.5c2.7 0 2.7-7 5.3-7s2.7 7 5.4 7 2.7-7 5.3-7"></path></svg>
+        <span style="font-family: 'Newsreader', Georgia, serif; font-size: 18px; font-weight: 600; letter-spacing: -0.01em;">CadenceOS</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 2px; padding: 0 12px;">
+        <a href="#" style="height: 38px; padding: 0 12px; display: flex; align-items: center; gap: 10px; border-radius: 4px; color: #5F584C; font-size: 14px; font-weight: 500;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8B8375" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2"></rect><path d="M3.5 10h17"></path><path d="M8 3v4"></path><path d="M16 3v4"></path></svg>
+          Upcoming queue
+        </a>
+        <a href="#" style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-radius: 4px; color: #5F584C; font-size: 14px; font-weight: 500;">
+          <span style="display: flex; align-items: center; gap: 10px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8B8375" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 22 20H2z"></path><path d="M12 10v4.5"></path><path d="M12 17.4v.2"></path></svg>
+            Failure queue
+          </span>
+          <span style="min-width: 22px; height: 20px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: #F1D9D4; color: #8F3325; font-size: 11px; font-weight: 600;">7</span>
+        </a>
+        <a href="#" style="height: 38px; padding: 0 12px; display: flex; align-items: center; gap: 10px; border-radius: 4px; color: #5F584C; font-size: 14px; font-weight: 500;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8B8375" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"></path><path d="M4 12h16"></path><path d="M4 18h10"></path></svg>
+          Schedules
+        </a>
+        <a href="#" style="height: 38px; padding: 0 12px; display: flex; align-items: center; gap: 10px; border-radius: 4px; background: #E9E0D4; color: #1F1C17; font-size: 14px; font-weight: 600;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7E4829" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V9"></path><path d="M10 19V5"></path><path d="M16 19v-7"></path><path d="M21 19H3"></path></svg>
+          Churn &amp; cadence
+        </a>
+        <a href="#" style="height: 38px; padding: 0 12px; display: flex; align-items: center; gap: 10px; border-radius: 4px; color: #5F584C; font-size: 14px; font-weight: 500;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8B8375" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 7v5.4l3.4 2"></path></svg>
+          Event log
+        </a>
+      </div>
+    </div>
+    <div style="padding: 0 20px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="width: 7px; height: 7px; border-radius: 999px; background: #3F6B4F;"></span>
+        <span class="mono" style="font-size: 11px; color: #5F584C;">production</span>
+      </div>
+      <div style="font-size: 11px; color: #A9A093;">Read models rebuilt 03:20 UTC</div>
+    </div>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; flex-direction: column; min-width: 0;">
+
+    <div style="height: 64px; flex-shrink: 0; padding: 0 28px; border-bottom: 1px solid #E4DED4; background: #FFFFFF; display: flex; align-items: center; justify-content: space-between; gap: 24px;">
+      <h1 style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-size: 22px; font-weight: 500;">Churn &amp; cadence</h1>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <div style="height: 36px; padding: 0 13px; display: flex; align-items: center; gap: 8px; border: 1px solid #E4DED4; border-radius: 4px; background: #FFFFFF; font-size: 13.5px; font-weight: 500;">
+          All SKUs
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B8375" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"></path></svg>
+        </div>
+        <div style="height: 36px; padding: 0 13px; display: flex; align-items: center; gap: 8px; border: 1px solid #E4DED4; border-radius: 4px; background: #FFFFFF; font-size: 13.5px; font-weight: 500;">
+          Last 90 days
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B8375" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"></path></svg>
+        </div>
+      </div>
+    </div>
+
+    <div style="padding: 22px 28px 28px; display: flex; flex-direction: column; gap: 18px;">
+
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px;">
+        <div style="background: #FFFFFF; border: 1px solid #E4DED4; border-radius: 6px; padding: 15px 17px; display: flex; flex-direction: column; gap: 5px;">
+          <div style="font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Cancellations, 90 days</div>
+          <div style="font-family: 'Newsreader', Georgia, serif; font-size: 28px; font-weight: 500; line-height: 1;">278</div>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E4DED4; border-radius: 6px; padding: 15px 17px; display: flex; flex-direction: column; gap: 5px;">
+          <div style="font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Reached order 4</div>
+          <div style="font-family: 'Newsreader', Georgia, serif; font-size: 28px; font-weight: 500; line-height: 1;">61%</div>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E4DED4; border-radius: 6px; padding: 15px 17px; display: flex; flex-direction: column; gap: 5px;">
+          <div style="font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Median interval</div>
+          <div style="font-family: 'Newsreader', Georgia, serif; font-size: 28px; font-weight: 500; line-height: 1;">31 days</div>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E4DED4; border-radius: 6px; padding: 15px 17px; display: flex; flex-direction: column; gap: 5px;">
+          <div style="font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Changed their interval</div>
+          <div style="font-family: 'Newsreader', Georgia, serif; font-size: 28px; font-weight: 500; line-height: 1;">23%</div>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 18px; align-items: start;">
+
+        <div style="background: #FFFFFF; border: 1px solid #E4DED4; border-radius: 6px; padding: 20px 22px 22px; display: flex; flex-direction: column; gap: 18px;">
+          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 16px;">
+            <div style="display: flex; flex-direction: column; gap: 3px;">
+              <h2 style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-size: 18px; font-weight: 500;">Why customers cancelled</h2>
+              <span style="font-size: 12.5px; color: #8B8375;">278 cancellations, last 90 days</span>
+            </div>
+            <a href="#" style="font-size: 12.5px; font-weight: 600;">View as table</a>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 13px;">
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <span style="width: 208px; flex-shrink: 0; font-size: 13px; color: #1F1C17; text-align: right;">Arrive closer together than I want</span>
+              <span style="flex-grow: 1; display: flex; align-items: center; gap: 10px;"><span class="bar" style="width: 100%;"></span><span class="mono" style="font-size: 12.5px; font-weight: 500; color: #1F1C17;">84</span></span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <span style="width: 208px; flex-shrink: 0; font-size: 13px; color: #1F1C17; text-align: right;">Costs more than I want to spend</span>
+              <span style="flex-grow: 1; display: flex; align-items: center; gap: 10px;"><span class="bar" style="width: 84.5%;"></span><span class="mono" style="font-size: 12.5px; font-weight: 500; color: #1F1C17;">71</span></span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <span style="width: 208px; flex-shrink: 0; font-size: 13px; color: #5F584C; text-align: right;">Do not want the product any more</span>
+              <span style="flex-grow: 1; display: flex; align-items: center; gap: 10px;"><span class="bar" style="width: 54.8%;"></span><span class="mono" style="font-size: 12.5px; color: #5F584C;">46</span></span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <span style="width: 208px; flex-shrink: 0; font-size: 13px; color: #5F584C; text-align: right;">Buying it somewhere else</span>
+              <span style="flex-grow: 1; display: flex; align-items: center; gap: 10px;"><span class="bar" style="width: 39.3%;"></span><span class="mono" style="font-size: 12.5px; color: #5F584C;">33</span></span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <span style="width: 208px; flex-shrink: 0; font-size: 13px; color: #5F584C; text-align: right;">Problem with delivery</span>
+              <span style="flex-grow: 1; display: flex; align-items: center; gap: 10px;"><span class="bar" style="width: 25.0%;"></span><span class="mono" style="font-size: 12.5px; color: #5F584C;">21</span></span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <span style="width: 208px; flex-shrink: 0; font-size: 13px; color: #5F584C; text-align: right;">Problem with payment</span>
+              <span style="flex-grow: 1; display: flex; align-items: center; gap: 10px;"><span class="bar" style="width: 16.7%;"></span><span class="mono" style="font-size: 12.5px; color: #5F584C;">14</span></span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <span style="width: 208px; flex-shrink: 0; font-size: 13px; color: #5F584C; text-align: right;">Something else</span>
+              <span style="flex-grow: 1; display: flex; align-items: center; gap: 10px;"><span class="bar" style="width: 10.7%;"></span><span class="mono" style="font-size: 12.5px; color: #5F584C;">9</span></span>
+            </div>
+          </div>
+
+          <div style="padding-top: 4px; border-top: 1px solid #EFEAE2;">
+            <p style="margin: 14px 0 0; font-size: 13px; line-height: 1.55; color: #5F584C; text-wrap: pretty;">The top reason is a spacing problem, not a product problem. Offering a longer interval in the cancel flow is the cheapest thing to try against it.</p>
+          </div>
+        </div>
+
+        <div style="background: #FFFFFF; border: 1px solid #E4DED4; border-radius: 6px; padding: 20px 22px 22px; display: flex; flex-direction: column; gap: 18px;">
+          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 16px;">
+            <div style="display: flex; flex-direction: column; gap: 3px;">
+              <h2 style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-size: 18px; font-weight: 500;">Intervals customers chose</h2>
+              <span style="font-size: 12.5px; color: #8B8375;">1,284 active schedules</span>
+            </div>
+            <a href="#" style="font-size: 12.5px; font-weight: 600;">View as table</a>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 0;">
+            <div style="height: 224px; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; align-items: end; border-bottom: 1px solid #D3CABB; padding-bottom: 0;">
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;"><span class="mono" style="font-size: 11.5px; color: #8B8375;">46</span><span class="col" style="height: 18px;"></span></div>
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;"><span class="mono" style="font-size: 11.5px; color: #8B8375;">188</span><span class="col" style="height: 73px;"></span></div>
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;"><span class="mono" style="font-size: 11.5px; color: #8B8375;">131</span><span class="col" style="height: 51px;"></span></div>
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;"><span class="mono" style="font-size: 12px; color: #1F1C17; font-weight: 600;">512</span><span class="col" style="height: 178px;"></span></div>
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;"><span class="mono" style="font-size: 11.5px; color: #8B8375;">96</span><span class="col" style="height: 38px;"></span></div>
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;"><span class="mono" style="font-size: 11.5px; color: #8B8375;">217</span><span class="col" style="height: 85px;"></span></div>
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;"><span class="mono" style="font-size: 11.5px; color: #8B8375;">94</span><span class="col" style="height: 37px;"></span></div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; padding-top: 9px;">
+              <span class="mono" style="font-size: 11px; color: #8B8375; text-align: center;">7&ndash;13</span>
+              <span class="mono" style="font-size: 11px; color: #8B8375; text-align: center;">14&ndash;20</span>
+              <span class="mono" style="font-size: 11px; color: #8B8375; text-align: center;">21&ndash;27</span>
+              <span class="mono" style="font-size: 11px; color: #1F1C17; text-align: center; font-weight: 500;">28&ndash;34</span>
+              <span class="mono" style="font-size: 11px; color: #8B8375; text-align: center;">35&ndash;41</span>
+              <span class="mono" style="font-size: 11px; color: #8B8375; text-align: center;">42&ndash;55</span>
+              <span class="mono" style="font-size: 11px; color: #8B8375; text-align: center;">56+</span>
+            </div>
+            <div style="text-align: center; padding-top: 6px; font-size: 11.5px; color: #A9A093;">days between orders</div>
+          </div>
+
+          <div style="padding-top: 4px; border-top: 1px solid #EFEAE2;">
+            <p style="margin: 14px 0 0; font-size: 13px; line-height: 1.55; color: #5F584C; text-wrap: pretty;">The 28-day peak is the seeded default for HOH-1042, a merchandising decision derived from pack size and observed reorder behaviour. The second cluster at 42&ndash;55 days is customers moving it themselves &mdash; worth reading before the default is re-set.</p>
+          </div>
+        </div>
+
+      </div>
+
+      <div style="background: #FFFFFF; border: 1px solid #E4DED4; border-radius: 6px; padding: 18px 22px; display: flex; align-items: center; gap: 24px;">
+        <div style="display: flex; flex-direction: column; gap: 3px; flex-shrink: 0;">
+          <div style="font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Audience export</div>
+          <div style="font-size: 12.5px; color: #8B8375;">Read models, refreshed nightly</div>
+        </div>
+        <div style="flex-grow: 1; display: flex; gap: 10px; flex-wrap: wrap;">
+          <span style="height: 36px; padding: 0 14px; display: inline-flex; align-items: center; gap: 9px; border: 1px solid #E4DED4; border-radius: 999px; background: #FBF9F6; font-size: 13px;"><span style="font-weight: 600;">Paused</span><span class="mono" style="color: #8B8375;">146</span></span>
+          <span style="height: 36px; padding: 0 14px; display: inline-flex; align-items: center; gap: 9px; border: 1px solid #E4DED4; border-radius: 999px; background: #FBF9F6; font-size: 13px;"><span style="font-weight: 600;">Failed, reactivatable</span><span class="mono" style="color: #8B8375;">7</span></span>
+          <span style="height: 36px; padding: 0 14px; display: inline-flex; align-items: center; gap: 9px; border: 1px solid #E4DED4; border-radius: 999px; background: #FBF9F6; font-size: 13px;"><span style="font-weight: 600;">Cancelled within 90 days</span><span class="mono" style="color: #8B8375;">278</span></span>
+        </div>
+        <button style="height: 38px; padding: 0 16px; flex-shrink: 0; display: inline-flex; align-items: center; gap: 8px; border: 1px solid #D3CABB; border-radius: 4px; background: #FFFFFF; color: #1F1C17; font-family: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5F584C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5v12"></path><path d="M7.5 11 12 15.5 16.5 11"></path><path d="M4 20h16"></path></svg>
+          Export segment
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

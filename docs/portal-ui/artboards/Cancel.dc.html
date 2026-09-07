@@ -1,0 +1,85 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Public+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #FAF8F5; color: #1F1C17; font-family: 'Public Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #9C5B36; text-decoration: none; }
+    a:hover { color: #7E4829; text-decoration: underline; }
+  </style>
+</helmet>
+
+<div style="padding: 36px 44px 44px; display: flex; flex-direction: column; gap: 20px;">
+
+  <div style="display: flex; flex-direction: column; gap: 5px;">
+    <div style="font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Portal action &middot; cancel with reason code</div>
+    <h1 style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-size: 26px; font-weight: 500;">Cancelling</h1>
+  </div>
+
+  <div style="background: #FFFFFF; border: 1px solid #E4DED4; border-radius: 6px; padding: 26px 28px; display: flex; flex-direction: column; gap: 22px;">
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <h2 style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-size: 22px; font-weight: 500;">Cancel your recurring orders?</h2>
+      <p style="margin: 0; font-size: 14px; line-height: 1.55; color: #5F584C; max-width: 68ch; text-wrap: pretty;">Nothing further will be charged and your scheduled orders are cleared. You can order again any time from the store &mdash; this only ends the schedule.</p>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <div style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Why are you cancelling? &nbsp;<span style="text-transform: none; letter-spacing: 0; font-weight: 400; color: #A9A093;">Optional, but it genuinely helps us</span></div>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;">
+        <label style="display: flex; align-items: center; gap: 11px; min-height: 48px; padding: 12px 15px; border: 1px solid #E4DED4; border-radius: 4px; background: #FFFFFF; cursor: pointer;">
+          <span style="width: 17px; height: 17px; flex-shrink: 0; border-radius: 999px; border: 1px solid #C6BEB1; background: #FFFFFF;"></span>
+          <span style="font-size: 14px;">It costs more than I want to spend</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 11px; min-height: 48px; padding: 12px 15px; border: 1px solid #9C5B36; border-radius: 4px; background: #F6EDE6; cursor: pointer;">
+          <span style="width: 17px; height: 17px; flex-shrink: 0; border-radius: 999px; border: 5px solid #9C5B36; background: #FFFFFF;"></span>
+          <span style="font-size: 14px; font-weight: 600;">Orders arrive closer together than I want</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 11px; min-height: 48px; padding: 12px 15px; border: 1px solid #E4DED4; border-radius: 4px; background: #FFFFFF; cursor: pointer;">
+          <span style="width: 17px; height: 17px; flex-shrink: 0; border-radius: 999px; border: 1px solid #C6BEB1; background: #FFFFFF;"></span>
+          <span style="font-size: 14px;">I am buying this somewhere else</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 11px; min-height: 48px; padding: 12px 15px; border: 1px solid #E4DED4; border-radius: 4px; background: #FFFFFF; cursor: pointer;">
+          <span style="width: 17px; height: 17px; flex-shrink: 0; border-radius: 999px; border: 1px solid #C6BEB1; background: #FFFFFF;"></span>
+          <span style="font-size: 14px;">There was a problem with delivery</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 11px; min-height: 48px; padding: 12px 15px; border: 1px solid #E4DED4; border-radius: 4px; background: #FFFFFF; cursor: pointer;">
+          <span style="width: 17px; height: 17px; flex-shrink: 0; border-radius: 999px; border: 1px solid #C6BEB1; background: #FFFFFF;"></span>
+          <span style="font-size: 14px;">There was a problem with payment</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 11px; min-height: 48px; padding: 12px 15px; border: 1px solid #E4DED4; border-radius: 4px; background: #FFFFFF; cursor: pointer;">
+          <span style="width: 17px; height: 17px; flex-shrink: 0; border-radius: 999px; border: 1px solid #C6BEB1; background: #FFFFFF;"></span>
+          <span style="font-size: 14px;">I do not want this product any more</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 11px; min-height: 48px; padding: 12px 15px; border: 1px solid #E4DED4; border-radius: 4px; background: #FFFFFF; cursor: pointer; grid-column: span 2;">
+          <span style="width: 17px; height: 17px; flex-shrink: 0; border-radius: 999px; border: 1px solid #C6BEB1; background: #FFFFFF;"></span>
+          <span style="font-size: 14px;">Something else</span>
+        </label>
+      </div>
+    </div>
+
+    <div style="background: #F6F3EE; border: 1px solid #EFEAE2; border-radius: 4px; padding: 18px 20px; display: flex; gap: 16px; align-items: center;">
+      <div style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1;">
+        <div style="font-size: 15px; font-weight: 600;">A longer gap might fix that</div>
+        <div style="font-size: 13px; line-height: 1.5; color: #5F584C;">You are on 28 days. Moving to 42 or 56 keeps the recurring discount and stretches out the deliveries.</div>
+      </div>
+      <div style="display: flex; gap: 8px; flex-shrink: 0;">
+        <button style="height: 44px; padding: 0 18px; display: inline-flex; align-items: center; border: 1px solid #D3CABB; border-radius: 4px; background: #FFFFFF; color: #1F1C17; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">Go to 42 days</button>
+        <button style="height: 44px; padding: 0 18px; display: inline-flex; align-items: center; border: 1px solid #D3CABB; border-radius: 4px; background: #FFFFFF; color: #1F1C17; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">Pause instead</button>
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 10px; align-items: center; padding-top: 4px; border-top: 1px solid #EFEAE2;">
+      <button style="height: 44px; margin-top: 18px; padding: 0 20px; display: inline-flex; align-items: center; border: 1px solid #A33B2B; border-radius: 4px; background: #A33B2B; color: #FFFFFF; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">Cancel recurring orders</button>
+      <button style="height: 44px; margin-top: 18px; padding: 0 20px; display: inline-flex; align-items: center; border: 1px solid #D3CABB; border-radius: 4px; background: #FFFFFF; color: #1F1C17; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">Keep my schedule</button>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>
