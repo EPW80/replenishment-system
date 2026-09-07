@@ -1,0 +1,193 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Public+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #FAF8F5; color: #1F1C17; font-family: 'Public Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #9C5B36; text-decoration: none; }
+    a:hover { color: #7E4829; text-decoration: underline; }
+  </style>
+</helmet>
+
+<div style="padding: 40px 44px 48px; display: flex; flex-direction: column; gap: 24px;">
+
+  <div style="display: flex; flex-direction: column; gap: 8px;">
+    <div style="font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #8B8375; font-weight: 600;">House of Helix &middot; Account</div>
+    <h1 style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-size: 34px; font-weight: 500; letter-spacing: -0.01em; line-height: 1.15;">Recurring orders</h1>
+    <p style="margin: 0; font-size: 15px; line-height: 1.55; color: #5F584C; max-width: 60ch; text-wrap: pretty;">Reorder on a schedule you set. Change how often it repeats, skip an order, or push one back &mdash; any time up to 72 hours before it is charged.</p>
+  </div>
+
+  <div style="background: #FFFFFF; border: 1px solid #E4DED4; border-radius: 6px; display: flex; flex-direction: column;">
+
+    <div style="padding: 26px 28px; display: flex; gap: 28px; align-items: flex-start; border-bottom: 1px solid #E4DED4;">
+      <div style="display: flex; flex-direction: column; gap: 12px; flex-grow: 1;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span style="display: inline-flex; align-items: center; gap: 7px; padding: 4px 11px 4px 9px; border-radius: 999px; background: #EBF1EC; color: #35604A; font-size: 12px; font-weight: 600; letter-spacing: 0.01em;"><span style="width: 6px; height: 6px; border-radius: 999px; background: #3F6B4F;"></span>Active</span>
+          <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 12px; color: #8B8375; letter-spacing: 0.02em;">SCH&middot;8F2A41C9</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <div style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Next order</div>
+          <div style="font-family: 'Newsreader', Georgia, serif; font-size: 30px; font-weight: 500; letter-spacing: -0.01em; line-height: 1.2;">Friday, 18 September 2026</div>
+          <div style="font-size: 14px; color: #5F584C;">Repeats every 28 days &middot; 12 days from now</div>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; width: 188px;">
+        <button style="height: 44px; padding: 0 18px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid #D3CABB; border-radius: 4px; background: #FFFFFF; color: #1F1C17; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5F584C" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"></path><path d="M20 4v4h-4"></path></svg>
+          Change interval
+        </button>
+        <button style="height: 44px; padding: 0 18px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid #D3CABB; border-radius: 4px; background: #FFFFFF; color: #1F1C17; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5F584C" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="5" width="3.5" height="14" rx="1"></rect><rect x="13.5" y="5" width="3.5" height="14" rx="1"></rect></svg>
+          Pause
+        </button>
+      </div>
+    </div>
+
+    <div style="padding: 22px 28px; border-bottom: 1px solid #E4DED4; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px 28px;">
+      <div style="display: flex; flex-direction: column; gap: 3px;">
+        <div style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Interval</div>
+        <div style="font-size: 15px;">Every 28 days</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 3px;">
+        <div style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Started</div>
+        <div style="font-size: 15px;">29 May 2026</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 3px;">
+        <div style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Time zone</div>
+        <div style="font-size: 15px;">America/Los_Angeles</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 3px;">
+        <div style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Ships to</div>
+        <div style="font-size: 15px; color: #5F584C;">[Default shipping address]</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 3px;">
+        <div style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Payment</div>
+        <div style="font-size: 15px; display: flex; align-items: baseline; gap: 8px;">Card on file <a href="#" style="font-size: 13px; font-weight: 600;">Update</a></div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 3px;">
+        <div style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Recurring discount</div>
+        <div style="font-size: 15px; color: #9C5B36; font-weight: 600;">[10]% off every order</div>
+      </div>
+    </div>
+
+    <div style="padding: 22px 28px; display: flex; flex-direction: column; gap: 14px;">
+      <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 16px;">
+        <div style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8B8375; font-weight: 600;">What ships each time</div>
+        <div style="font-size: 12px; color: #8B8375;">Names and prices from the store catalog</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <div style="display: flex; align-items: center; gap: 16px; padding: 11px 0; border-top: 1px solid #EFEAE2;">
+          <span style="width: 34px; flex-shrink: 0; font-size: 15px; font-weight: 600; color: #5F584C;">2 &times;</span>
+          <span style="width: 128px; flex-shrink: 0; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px; color: #1F1C17;">HOH-1042</span>
+          <span style="flex-grow: 1; font-size: 15px; color: #5F584C;">[Product name]</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 16px; padding: 11px 0; border-top: 1px solid #EFEAE2;">
+          <span style="width: 34px; flex-shrink: 0; font-size: 15px; font-weight: 600; color: #5F584C;">1 &times;</span>
+          <span style="width: 128px; flex-shrink: 0; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px; color: #1F1C17;">HOH-2210</span>
+          <span style="flex-grow: 1; font-size: 15px; color: #5F584C;">[Product name]</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 16px; padding: 11px 0; border-top: 1px solid #EFEAE2; border-bottom: 1px solid #EFEAE2;">
+          <span style="width: 34px; flex-shrink: 0; font-size: 15px; font-weight: 600; color: #5F584C;">1 &times;</span>
+          <span style="width: 128px; flex-shrink: 0; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px; color: #1F1C17;">HOH-3005</span>
+          <span style="flex-grow: 1; font-size: 15px; color: #5F584C;">[Product name]</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="background: #FFFFFF; border: 1px solid #E4DED4; border-radius: 6px; display: flex; flex-direction: column;">
+    <div style="padding: 22px 28px 16px; display: flex; flex-direction: column; gap: 6px;">
+      <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 16px;">
+        <h2 style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-size: 21px; font-weight: 500;">Upcoming orders</h2>
+        <span style="font-size: 12px; color: #8B8375;">Three scheduled ahead</span>
+      </div>
+      <p style="margin: 0; font-size: 13px; color: #5F584C;">Skip or push back any order up to 72 hours before it is charged. We email you before each one.</p>
+    </div>
+
+    <div style="padding: 0 28px 8px; display: flex; flex-direction: column;">
+      <div style="display: flex; align-items: center; gap: 18px; padding: 16px 0; border-top: 1px solid #EFEAE2;">
+        <span style="width: 30px; flex-shrink: 0; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px; color: #A9A093;">#5</span>
+        <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 3px;">
+          <span style="font-size: 15px; font-weight: 600;">Friday, 18 September 2026</span>
+          <span style="font-size: 13px; color: #8B8375;">Charges in 12 days</span>
+        </div>
+        <span style="display: inline-flex; align-items: center; padding: 4px 11px; border-radius: 999px; background: #F0EDE7; color: #5F584C; font-size: 12px; font-weight: 600;">Scheduled</span>
+        <div style="display: flex; gap: 8px; flex-shrink: 0;">
+          <button style="height: 36px; padding: 0 14px; display: inline-flex; align-items: center; border: 1px solid #D3CABB; border-radius: 4px; background: #FFFFFF; color: #1F1C17; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;">Skip</button>
+          <button style="height: 36px; padding: 0 14px; display: inline-flex; align-items: center; border: 1px solid #D3CABB; border-radius: 4px; background: #FFFFFF; color: #1F1C17; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;">Push back</button>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 18px; padding: 16px 0; border-top: 1px solid #EFEAE2;">
+        <span style="width: 30px; flex-shrink: 0; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px; color: #A9A093;">#6</span>
+        <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 3px;">
+          <span style="font-size: 15px; font-weight: 600;">Friday, 16 October 2026</span>
+          <span style="font-size: 13px; color: #8B8375;">Charges in 40 days</span>
+        </div>
+        <span style="display: inline-flex; align-items: center; padding: 4px 11px; border-radius: 999px; background: #F0EDE7; color: #5F584C; font-size: 12px; font-weight: 600;">Scheduled</span>
+        <div style="display: flex; gap: 8px; flex-shrink: 0;">
+          <button style="height: 36px; padding: 0 14px; display: inline-flex; align-items: center; border: 1px solid #D3CABB; border-radius: 4px; background: #FFFFFF; color: #1F1C17; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;">Skip</button>
+          <button style="height: 36px; padding: 0 14px; display: inline-flex; align-items: center; border: 1px solid #D3CABB; border-radius: 4px; background: #FFFFFF; color: #1F1C17; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;">Push back</button>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 18px; padding: 16px 0; border-top: 1px solid #EFEAE2;">
+        <span style="width: 30px; flex-shrink: 0; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px; color: #A9A093;">#7</span>
+        <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 3px;">
+          <span style="font-size: 15px; font-weight: 600;">Friday, 13 November 2026</span>
+          <span style="font-size: 13px; color: #8B8375;">Charges in 68 days</span>
+        </div>
+        <span style="display: inline-flex; align-items: center; padding: 4px 11px; border-radius: 999px; background: #F0EDE7; color: #5F584C; font-size: 12px; font-weight: 600;">Scheduled</span>
+        <div style="display: flex; gap: 8px; flex-shrink: 0;">
+          <button style="height: 36px; padding: 0 14px; display: inline-flex; align-items: center; border: 1px solid #D3CABB; border-radius: 4px; background: #FFFFFF; color: #1F1C17; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;">Skip</button>
+          <button style="height: 36px; padding: 0 14px; display: inline-flex; align-items: center; border: 1px solid #D3CABB; border-radius: 4px; background: #FFFFFF; color: #1F1C17; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;">Push back</button>
+        </div>
+      </div>
+    </div>
+
+    <div style="padding: 14px 28px 22px; border-top: 1px solid #E4DED4; background: #FBF9F6; border-radius: 0 0 6px 6px; display: flex; flex-direction: column; gap: 4px;">
+      <div style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8B8375; font-weight: 600; padding-bottom: 6px;">Already sent</div>
+      <div style="display: flex; align-items: center; gap: 18px; padding: 11px 0; border-top: 1px solid #EFEAE2;">
+        <span style="width: 30px; flex-shrink: 0; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px; color: #A9A093;">#4</span>
+        <span style="flex-grow: 1; font-size: 14px;">21 August 2026</span>
+        <span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: #EBF1EC; color: #35604A; font-size: 12px; font-weight: 600;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#35604A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"></path></svg>
+          Placed
+        </span>
+        <a href="#" style="width: 108px; text-align: right; font-size: 13px; font-weight: 600;">Order [#12841]</a>
+      </div>
+      <div style="display: flex; align-items: center; gap: 18px; padding: 11px 0; border-top: 1px solid #EFEAE2;">
+        <span style="width: 30px; flex-shrink: 0; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px; color: #A9A093;">#3</span>
+        <span style="flex-grow: 1; font-size: 14px;">24 July 2026</span>
+        <span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: #F0EDE7; color: #6B6459; font-size: 12px; font-weight: 600;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6B6459" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5 19 19"></path><path d="M19 5 5 19"></path></svg>
+          Skipped by you
+        </span>
+        <span style="width: 108px;"></span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 18px; padding: 11px 0; border-top: 1px solid #EFEAE2;">
+        <span style="width: 30px; flex-shrink: 0; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px; color: #A9A093;">#2</span>
+        <span style="flex-grow: 1; font-size: 14px;">26 June 2026</span>
+        <span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: #EBF1EC; color: #35604A; font-size: 12px; font-weight: 600;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#35604A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"></path></svg>
+          Placed
+        </span>
+        <a href="#" style="width: 108px; text-align: right; font-size: 13px; font-weight: 600;">Order [#12604]</a>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 2px 4px;">
+    <span style="font-size: 13px; color: #8B8375;">Questions? Contact <a href="#">[support email]</a>.</span>
+    <a href="#" style="font-size: 13px; font-weight: 600; color: #A33B2B;">Cancel recurring orders</a>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

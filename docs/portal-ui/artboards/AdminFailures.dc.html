@@ -1,0 +1,271 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Public+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #FAF8F5; color: #1F1C17; font-family: 'Public Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #9C5B36; text-decoration: none; }
+    a:hover { color: #7E4829; text-decoration: underline; }
+    .mono { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; }
+  </style>
+</helmet>
+
+<div style="display: flex; min-height: 900px; background: #FAF8F5;">
+
+  <div style="width: 228px; flex-shrink: 0; background: #F3EFE9; border-right: 1px solid #E4DED4; display: flex; flex-direction: column; justify-content: space-between; padding: 22px 0;">
+    <div style="display: flex; flex-direction: column; gap: 26px;">
+      <div style="padding: 0 20px; display: flex; align-items: center; gap: 10px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9C5B36" stroke-width="1.8" stroke-linecap="round"><path d="M4 15.5c2.7 0 2.7-7 5.3-7s2.7 7 5.4 7 2.7-7 5.3-7"></path></svg>
+        <span style="font-family: 'Newsreader', Georgia, serif; font-size: 18px; font-weight: 600; letter-spacing: -0.01em;">CadenceOS</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 2px; padding: 0 12px;">
+        <a href="#" style="height: 38px; padding: 0 12px; display: flex; align-items: center; gap: 10px; border-radius: 4px; color: #5F584C; font-size: 14px; font-weight: 500;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8B8375" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2"></rect><path d="M3.5 10h17"></path><path d="M8 3v4"></path><path d="M16 3v4"></path></svg>
+          Upcoming queue
+        </a>
+        <a href="#" style="height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-radius: 4px; background: #E9E0D4; color: #1F1C17; font-size: 14px; font-weight: 600;">
+          <span style="display: flex; align-items: center; gap: 10px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8F3325" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 22 20H2z"></path><path d="M12 10v4.5"></path><path d="M12 17.4v.2"></path></svg>
+            Failure queue
+          </span>
+          <span style="min-width: 22px; height: 20px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: #F1D9D4; color: #8F3325; font-size: 11px; font-weight: 600;">7</span>
+        </a>
+        <a href="#" style="height: 38px; padding: 0 12px; display: flex; align-items: center; gap: 10px; border-radius: 4px; color: #5F584C; font-size: 14px; font-weight: 500;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8B8375" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"></path><path d="M4 12h16"></path><path d="M4 18h10"></path></svg>
+          Schedules
+        </a>
+        <a href="#" style="height: 38px; padding: 0 12px; display: flex; align-items: center; gap: 10px; border-radius: 4px; color: #5F584C; font-size: 14px; font-weight: 500;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8B8375" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V9"></path><path d="M10 19V5"></path><path d="M16 19v-7"></path><path d="M21 19H3"></path></svg>
+          Churn &amp; cadence
+        </a>
+        <a href="#" style="height: 38px; padding: 0 12px; display: flex; align-items: center; gap: 10px; border-radius: 4px; color: #5F584C; font-size: 14px; font-weight: 500;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8B8375" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 7v5.4l3.4 2"></path></svg>
+          Event log
+        </a>
+      </div>
+    </div>
+    <div style="padding: 0 20px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="width: 7px; height: 7px; border-radius: 999px; background: #3F6B4F;"></span>
+        <span class="mono" style="font-size: 11px; color: #5F584C;">production</span>
+      </div>
+      <div style="font-size: 11px; color: #A9A093;">Nightly sweep ran 03:12 UTC</div>
+    </div>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; flex-direction: column; min-width: 0;">
+
+    <div style="height: 64px; flex-shrink: 0; padding: 0 28px; border-bottom: 1px solid #E4DED4; background: #FFFFFF; display: flex; align-items: center; justify-content: space-between; gap: 24px;">
+      <h1 style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-size: 22px; font-weight: 500;">Failure queue</h1>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <div style="height: 36px; padding: 0 13px; display: flex; align-items: center; gap: 8px; border: 1px solid #E4DED4; border-radius: 4px; background: #FFFFFF; font-size: 13.5px; font-weight: 500;">
+          All error classes
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B8375" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"></path></svg>
+        </div>
+        <div style="height: 36px; padding: 0 13px; display: flex; align-items: center; gap: 8px; border: 1px solid #E4DED4; border-radius: 4px; background: #FFFFFF; font-size: 13.5px; font-weight: 500;">
+          Last 30 days
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B8375" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"></path></svg>
+        </div>
+      </div>
+    </div>
+
+    <div style="padding: 22px 28px 28px; display: flex; flex-direction: column; gap: 18px;">
+
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px;">
+        <div style="background: #FFFFFF; border: 1px solid #E0B3AA; border-radius: 6px; padding: 15px 17px; display: flex; flex-direction: column; gap: 5px;">
+          <div style="font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: #8F3325; font-weight: 600;">Schedules failed out</div>
+          <div style="font-family: 'Newsreader', Georgia, serif; font-size: 28px; font-weight: 500; line-height: 1; color: #8F3325;">7</div>
+          <div style="font-size: 12px; color: #8B8375;">Three retries exhausted</div>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E4DED4; border-radius: 6px; padding: 15px 17px; display: flex; flex-direction: column; gap: 5px;">
+          <div style="font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Mid-ladder</div>
+          <div style="font-family: 'Newsreader', Georgia, serif; font-size: 28px; font-weight: 500; line-height: 1;">19</div>
+          <div style="font-size: 12px; color: #8B8375;">Retry still pending</div>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E4DED4; border-radius: 6px; padding: 15px 17px; display: flex; flex-direction: column; gap: 5px;">
+          <div style="font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Recovered, 30 days</div>
+          <div style="font-family: 'Newsreader', Georgia, serif; font-size: 28px; font-weight: 500; line-height: 1; color: #35604A;">42</div>
+          <div style="font-size: 12px; color: #8B8375;">Charged on rung 2 or 3</div>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E4DED4; border-radius: 6px; padding: 15px 17px; display: flex; flex-direction: column; gap: 5px;">
+          <div style="font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Stuck past due</div>
+          <div style="font-family: 'Newsreader', Georgia, serif; font-size: 28px; font-weight: 500; line-height: 1;">0</div>
+          <div style="font-size: 12px; color: #8B8375;">Caught by nightly sweep</div>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 18px; align-items: flex-start;">
+
+        <div style="flex-grow: 1; min-width: 0; background: #FFFFFF; border: 1px solid #E4DED4; border-radius: 6px; display: flex; flex-direction: column;">
+          <div style="padding: 15px 20px; border-bottom: 1px solid #E4DED4;">
+            <h2 style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-size: 18px; font-weight: 500;">Needs a decision</h2>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 128px 1fr 168px 96px 96px; padding: 0 20px; background: #FBF9F6; border-bottom: 1px solid #E4DED4;">
+            <div style="padding: 9px 8px 9px 0; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Schedule</div>
+            <div style="padding: 9px 8px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Error class</div>
+            <div style="padding: 9px 8px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Ladder</div>
+            <div style="padding: 9px 8px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Next try</div>
+            <div style="padding: 9px 0 9px 8px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: #8B8375; font-weight: 600; text-align: right;">Value</div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 128px 1fr 168px 96px 96px; padding: 0 20px; align-items: center;">
+
+            <div class="mono" style="padding: 14px 8px 14px 0; border-bottom: 1px solid #EFEAE2; background: #FBF6F4; font-size: 13px; color: #9C5B36;">SCH&middot;4B71D0</div>
+            <div style="padding: 14px 8px; border-bottom: 1px solid #EFEAE2; background: #FBF6F4;"><span class="mono" style="font-size: 12.5px; color: #8F3325;">gateway.insufficient_funds</span><span style="display: block; font-size: 12px; color: #8B8375; padding-top: 2px;">Retryable &middot; [customer 40218]</span></div>
+            <div style="padding: 14px 8px; border-bottom: 1px solid #EFEAE2; background: #FBF6F4; display: flex; align-items: center; gap: 6px;">
+              <span style="width: 22px; height: 6px; border-radius: 3px; background: #A33B2B;"></span>
+              <span style="width: 22px; height: 6px; border-radius: 3px; background: #A33B2B;"></span>
+              <span style="width: 22px; height: 6px; border-radius: 3px; background: #A33B2B;"></span>
+              <span style="font-size: 12px; font-weight: 600; color: #8F3325; padding-left: 4px;">3 of 3</span>
+            </div>
+            <div style="padding: 14px 8px; border-bottom: 1px solid #EFEAE2; background: #FBF6F4; font-size: 13px; color: #8F3325; font-weight: 600;">Exhausted</div>
+            <div class="mono" style="padding: 14px 0 14px 8px; border-bottom: 1px solid #EFEAE2; background: #FBF6F4; font-size: 13px; text-align: right; color: #5F584C;">$[000]</div>
+
+            <div class="mono" style="padding: 14px 8px 14px 0; border-bottom: 1px solid #EFEAE2; font-size: 13px; color: #9C5B36;">SCH&middot;88C1E2</div>
+            <div style="padding: 14px 8px; border-bottom: 1px solid #EFEAE2;"><span class="mono" style="font-size: 12.5px; color: #8F3325;">gateway.card_expired</span><span style="display: block; font-size: 12px; color: #8B8375; padding-top: 2px;">Terminal &middot; [customer 35112]</span></div>
+            <div style="padding: 14px 8px; border-bottom: 1px solid #EFEAE2; display: flex; align-items: center; gap: 6px;">
+              <span style="width: 22px; height: 6px; border-radius: 3px; background: #A33B2B;"></span>
+              <span style="width: 22px; height: 6px; border-radius: 3px; background: #A33B2B;"></span>
+              <span style="width: 22px; height: 6px; border-radius: 3px; background: #A33B2B;"></span>
+              <span style="font-size: 12px; font-weight: 600; color: #8F3325; padding-left: 4px;">3 of 3</span>
+            </div>
+            <div style="padding: 14px 8px; border-bottom: 1px solid #EFEAE2; font-size: 13px; color: #8F3325; font-weight: 600;">Exhausted</div>
+            <div class="mono" style="padding: 14px 0 14px 8px; border-bottom: 1px solid #EFEAE2; font-size: 13px; text-align: right; color: #5F584C;">$[000]</div>
+
+            <div class="mono" style="padding: 14px 8px 14px 0; border-bottom: 1px solid #EFEAE2; font-size: 13px; color: #9C5B36;">SCH&middot;0A5F73</div>
+            <div style="padding: 14px 8px; border-bottom: 1px solid #EFEAE2;"><span class="mono" style="font-size: 12.5px; color: #6B5216;">gateway.declined</span><span style="display: block; font-size: 12px; color: #8B8375; padding-top: 2px;">Retryable &middot; [customer 41730]</span></div>
+            <div style="padding: 14px 8px; border-bottom: 1px solid #EFEAE2; display: flex; align-items: center; gap: 6px;">
+              <span style="width: 22px; height: 6px; border-radius: 3px; background: #A33B2B;"></span>
+              <span style="width: 22px; height: 6px; border-radius: 3px; background: #A33B2B;"></span>
+              <span style="width: 22px; height: 6px; border-radius: 3px; background: #E4DED4;"></span>
+              <span style="font-size: 12px; font-weight: 600; color: #6B5216; padding-left: 4px;">2 of 3</span>
+            </div>
+            <div style="padding: 14px 8px; border-bottom: 1px solid #EFEAE2; font-size: 13px; color: #5F584C;">in 4 days</div>
+            <div class="mono" style="padding: 14px 0 14px 8px; border-bottom: 1px solid #EFEAE2; font-size: 13px; text-align: right; color: #5F584C;">$[000]</div>
+
+            <div class="mono" style="padding: 14px 8px 14px 0; border-bottom: 1px solid #EFEAE2; font-size: 13px; color: #9C5B36;">SCH&middot;E33B09</div>
+            <div style="padding: 14px 8px; border-bottom: 1px solid #EFEAE2;"><span class="mono" style="font-size: 12.5px; color: #6B5216;">woo.http_502</span><span style="display: block; font-size: 12px; color: #8B8375; padding-top: 2px;">Retryable &middot; order not created</span></div>
+            <div style="padding: 14px 8px; border-bottom: 1px solid #EFEAE2; display: flex; align-items: center; gap: 6px;">
+              <span style="width: 22px; height: 6px; border-radius: 3px; background: #A33B2B;"></span>
+              <span style="width: 22px; height: 6px; border-radius: 3px; background: #E4DED4;"></span>
+              <span style="width: 22px; height: 6px; border-radius: 3px; background: #E4DED4;"></span>
+              <span style="font-size: 12px; font-weight: 600; color: #6B5216; padding-left: 4px;">1 of 3</span>
+            </div>
+            <div style="padding: 14px 8px; border-bottom: 1px solid #EFEAE2; font-size: 13px; color: #5F584C;">in 2 days</div>
+            <div class="mono" style="padding: 14px 0 14px 8px; border-bottom: 1px solid #EFEAE2; font-size: 13px; text-align: right; color: #5F584C;">$[000]</div>
+
+            <div class="mono" style="padding: 14px 8px 14px 0; border-bottom: 1px solid #EFEAE2; font-size: 13px; color: #9C5B36;">SCH&middot;71DD46</div>
+            <div style="padding: 14px 8px; border-bottom: 1px solid #EFEAE2;"><span class="mono" style="font-size: 12.5px; color: #8F3325;">gateway.auth_failed</span><span style="display: block; font-size: 12px; color: #8B8375; padding-top: 2px;">Credential &middot; not retried</span></div>
+            <div style="padding: 14px 8px; border-bottom: 1px solid #EFEAE2; display: flex; align-items: center; gap: 6px;">
+              <span style="width: 22px; height: 6px; border-radius: 3px; background: #A33B2B;"></span>
+              <span style="width: 22px; height: 6px; border-radius: 3px; background: #E4DED4;"></span>
+              <span style="width: 22px; height: 6px; border-radius: 3px; background: #E4DED4;"></span>
+              <span style="font-size: 12px; font-weight: 600; color: #8F3325; padding-left: 4px;">Halted</span>
+            </div>
+            <div style="padding: 14px 8px; border-bottom: 1px solid #EFEAE2; font-size: 13px; color: #8F3325; font-weight: 600;">Paged on-call</div>
+            <div class="mono" style="padding: 14px 0 14px 8px; border-bottom: 1px solid #EFEAE2; font-size: 13px; text-align: right; color: #5F584C;">$[000]</div>
+
+            <div class="mono" style="padding: 14px 8px 14px 0; font-size: 13px; color: #9C5B36;">SCH&middot;2B6640</div>
+            <div style="padding: 14px 8px;"><span class="mono" style="font-size: 12.5px; color: #6B5216;">gateway.declined</span><span style="display: block; font-size: 12px; color: #8B8375; padding-top: 2px;">Retryable &middot; [customer 30887]</span></div>
+            <div style="padding: 14px 8px; display: flex; align-items: center; gap: 6px;">
+              <span style="width: 22px; height: 6px; border-radius: 3px; background: #A33B2B;"></span>
+              <span style="width: 22px; height: 6px; border-radius: 3px; background: #E4DED4;"></span>
+              <span style="width: 22px; height: 6px; border-radius: 3px; background: #E4DED4;"></span>
+              <span style="font-size: 12px; font-weight: 600; color: #6B5216; padding-left: 4px;">1 of 3</span>
+            </div>
+            <div style="padding: 14px 8px; font-size: 13px; color: #5F584C;">in 3 days</div>
+            <div class="mono" style="padding: 14px 0 14px 8px; font-size: 13px; text-align: right; color: #5F584C;">$[000]</div>
+
+          </div>
+        </div>
+
+        <div style="width: 372px; flex-shrink: 0; background: #FFFFFF; border: 1px solid #E4DED4; border-radius: 6px; display: flex; flex-direction: column;">
+          <div style="padding: 18px 20px; border-bottom: 1px solid #E4DED4; display: flex; flex-direction: column; gap: 9px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+              <span class="mono" style="font-size: 13px; color: #9C5B36;">SCH&middot;4B71D0</span>
+              <span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: #F9EAE7; color: #8F3325; font-size: 11.5px; font-weight: 600;"><span style="width: 5px; height: 5px; border-radius: 999px; background: #A33B2B;"></span>Failed</span>
+            </div>
+            <div style="font-family: 'Newsreader', Georgia, serif; font-size: 19px; font-weight: 500;">Occurrence #11, due 8 Sep</div>
+            <div class="mono" style="font-size: 11.5px; color: #8B8375;">key 4b71d0&hellip;:11 &middot; charged once at most</div>
+          </div>
+
+          <div style="padding: 18px 20px; border-bottom: 1px solid #E4DED4; display: flex; flex-direction: column; gap: 13px;">
+            <div style="font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Retry ladder</div>
+            <div style="display: flex; flex-direction: column; gap: 11px;">
+              <div style="display: flex; align-items: flex-start; gap: 11px;">
+                <span style="width: 9px; height: 9px; margin-top: 5px; flex-shrink: 0; border-radius: 999px; background: #A33B2B;"></span>
+                <div style="display: flex; flex-direction: column; gap: 1px;">
+                  <span style="font-size: 13.5px; font-weight: 600;">T+0 &middot; 8 Sep, 04:02</span>
+                  <span class="mono" style="font-size: 12px; color: #8B8375;">insufficient_funds</span>
+                </div>
+              </div>
+              <div style="display: flex; align-items: flex-start; gap: 11px;">
+                <span style="width: 9px; height: 9px; margin-top: 5px; flex-shrink: 0; border-radius: 999px; background: #A33B2B;"></span>
+                <div style="display: flex; flex-direction: column; gap: 1px;">
+                  <span style="font-size: 13.5px; font-weight: 600;">T+3d &middot; 11 Sep, 04:03</span>
+                  <span class="mono" style="font-size: 12px; color: #8B8375;">insufficient_funds</span>
+                </div>
+              </div>
+              <div style="display: flex; align-items: flex-start; gap: 11px;">
+                <span style="width: 9px; height: 9px; margin-top: 5px; flex-shrink: 0; border-radius: 999px; background: #A33B2B;"></span>
+                <div style="display: flex; flex-direction: column; gap: 1px;">
+                  <span style="font-size: 13.5px; font-weight: 600;">T+7d &middot; 15 Sep, 04:01</span>
+                  <span class="mono" style="font-size: 12px; color: #8B8375;">insufficient_funds &middot; ladder ended</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding: 18px 20px; border-bottom: 1px solid #E4DED4; display: flex; flex-direction: column; gap: 11px;">
+            <div style="font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Event log</div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="display: flex; gap: 10px; align-items: baseline;">
+                <span class="mono" style="width: 54px; flex-shrink: 0; font-size: 11.5px; color: #A9A093;">15 Sep</span>
+                <span class="mono" style="font-size: 12px; color: #1F1C17;">schedule.failed</span>
+                <span style="font-size: 11.5px; color: #8B8375; margin-left: auto;">system</span>
+              </div>
+              <div style="display: flex; gap: 10px; align-items: baseline;">
+                <span class="mono" style="width: 54px; flex-shrink: 0; font-size: 11.5px; color: #A9A093;">15 Sep</span>
+                <span class="mono" style="font-size: 12px; color: #1F1C17;">notification.sent</span>
+                <span style="font-size: 11.5px; color: #8B8375; margin-left: auto;">system</span>
+              </div>
+              <div style="display: flex; gap: 10px; align-items: baseline;">
+                <span class="mono" style="width: 54px; flex-shrink: 0; font-size: 11.5px; color: #A9A093;">11 Sep</span>
+                <span class="mono" style="font-size: 12px; color: #1F1C17;">attempt.failed</span>
+                <span style="font-size: 11.5px; color: #8B8375; margin-left: auto;">system</span>
+              </div>
+              <div style="display: flex; gap: 10px; align-items: baseline;">
+                <span class="mono" style="width: 54px; flex-shrink: 0; font-size: 11.5px; color: #A9A093;">05 Sep</span>
+                <span class="mono" style="font-size: 12px; color: #1F1C17;">occurrence.armed</span>
+                <span style="font-size: 11.5px; color: #8B8375; margin-left: auto;">system</span>
+              </div>
+              <div style="display: flex; gap: 10px; align-items: baseline;">
+                <span class="mono" style="width: 54px; flex-shrink: 0; font-size: 11.5px; color: #A9A093;">02 Aug</span>
+                <span class="mono" style="font-size: 12px; color: #1F1C17;">cadence.changed</span>
+                <span style="font-size: 11.5px; color: #8B8375; margin-left: auto;">customer</span>
+              </div>
+            </div>
+            <a href="#" style="font-size: 12.5px; font-weight: 600;">Full history</a>
+          </div>
+
+          <div style="padding: 18px 20px; display: flex; flex-direction: column; gap: 9px;">
+            <button style="height: 40px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #9C5B36; border-radius: 4px; background: #9C5B36; color: #FFFFFF; font-family: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;">Email reactivation link</button>
+            <button style="height: 40px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #D3CABB; border-radius: 4px; background: #FFFFFF; color: #1F1C17; font-family: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;">Retry charge now</button>
+            <button style="height: 40px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #D3CABB; border-radius: 4px; background: #FFFFFF; color: #1F1C17; font-family: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;">Open customer in WooCommerce</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

@@ -1,0 +1,97 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Public+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #FAF8F5; color: #1F1C17; font-family: 'Public Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #9C5B36; text-decoration: none; }
+    a:hover { color: #7E4829; text-decoration: underline; }
+  </style>
+</helmet>
+
+<div style="padding: 36px 44px 44px; display: flex; flex-direction: column; gap: 20px;">
+
+  <div style="display: flex; flex-direction: column; gap: 5px;">
+    <div style="font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Portal states &middot; paused and failed</div>
+    <h1 style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-size: 26px; font-weight: 500;">When orders stop</h1>
+  </div>
+
+  <div style="background: #FFFFFF; border: 1px solid #E4DED4; border-radius: 6px; padding: 26px 28px; display: flex; flex-direction: column; gap: 20px;">
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <h2 style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-size: 22px; font-weight: 500;">Pause your recurring orders</h2>
+      <p style="margin: 0; font-size: 14px; line-height: 1.55; color: #5F584C; max-width: 68ch; text-wrap: pretty;">Nothing is charged while paused, and the orders already scheduled are cleared. Set a date to start again automatically, or leave it open and resume whenever you like.</p>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <label style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid #9C5B36; border-radius: 4px; background: #F6EDE6; cursor: pointer;">
+        <span style="width: 18px; height: 18px; flex-shrink: 0; border-radius: 999px; border: 5px solid #9C5B36; background: #FFFFFF;"></span>
+        <span style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1;">
+          <span style="font-size: 15px; font-weight: 600; color: #1F1C17;">Resume automatically on a date</span>
+          <span style="font-size: 13px; color: #6B5A4A;">We start your schedule again that morning &mdash; no action needed from you.</span>
+        </span>
+        <span style="height: 44px; display: inline-flex; align-items: center; gap: 10px; padding: 0 14px; border: 1px solid #C7A98D; border-radius: 4px; background: #FFFFFF; flex-shrink: 0;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7E4829" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2"></rect><path d="M3.5 10h17"></path><path d="M8 3v4"></path><path d="M16 3v4"></path></svg>
+          <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 14px; color: #1F1C17;">2026-11-01</span>
+        </span>
+      </label>
+      <label style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid #E4DED4; border-radius: 4px; background: #FFFFFF; cursor: pointer;">
+        <span style="width: 18px; height: 18px; flex-shrink: 0; border-radius: 999px; border: 1px solid #C6BEB1; background: #FFFFFF;"></span>
+        <span style="display: flex; flex-direction: column; gap: 2px;">
+          <span style="font-size: 15px; font-weight: 600;">Pause until I say otherwise</span>
+          <span style="font-size: 13px; color: #8B8375;">Resume from this page whenever you want to reorder.</span>
+        </span>
+      </label>
+    </div>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <button style="height: 44px; padding: 0 20px; display: inline-flex; align-items: center; border: 1px solid #9C5B36; border-radius: 4px; background: #9C5B36; color: #FFFFFF; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">Pause orders</button>
+      <button style="height: 44px; padding: 0 20px; display: inline-flex; align-items: center; border: 1px solid #D3CABB; border-radius: 4px; background: #FFFFFF; color: #1F1C17; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">Never mind</button>
+    </div>
+  </div>
+
+  <div style="background: #FFFFFF; border: 1px solid #E4DED4; border-radius: 6px; padding: 24px 28px; display: flex; gap: 28px; align-items: center;">
+    <div style="display: flex; flex-direction: column; gap: 9px; flex-grow: 1;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="display: inline-flex; align-items: center; gap: 7px; padding: 4px 11px 4px 9px; border-radius: 999px; background: #F0EDE7; color: #57503F; font-size: 12px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 999px; background: #8B8375;"></span>Paused</span>
+        <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 12px; color: #8B8375;">SCH&middot;8F2A41C9</span>
+      </div>
+      <div style="font-family: 'Newsreader', Georgia, serif; font-size: 26px; font-weight: 500;">Resuming Sunday, 1 November 2026</div>
+      <div style="font-size: 14px; color: #5F584C;">Nothing will be charged before then. When it resumes, your first order goes out that day and the 28-day rhythm starts again from there.</div>
+    </div>
+    <button style="height: 44px; padding: 0 20px; display: inline-flex; align-items: center; border: 1px solid #9C5B36; border-radius: 4px; background: #9C5B36; color: #FFFFFF; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer; flex-shrink: 0;">Resume now</button>
+  </div>
+
+  <div style="background: #FFFFFF; border: 1px solid #E0B3AA; border-radius: 6px; display: flex; flex-direction: column;">
+    <div style="padding: 22px 28px; display: flex; gap: 16px; align-items: flex-start; background: #FAEDEA; border-bottom: 1px solid #E0B3AA; border-radius: 6px 6px 0 0;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8F3325" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 2px;"><path d="M12 3.5 22 20H2z"></path><path d="M12 10v4.5"></path><path d="M12 17.4v.2"></path></svg>
+      <div style="display: flex; flex-direction: column; gap: 5px; flex-grow: 1;">
+        <div style="font-size: 16px; font-weight: 600; color: #8F3325;">We could not charge your card</div>
+        <div style="font-size: 14px; line-height: 1.5; color: #7B3A2E;">We tried three times over the past week for the order due 18 September. Your schedule is on hold &mdash; update your card and it picks up right where it left off, no orders lost.</div>
+      </div>
+    </div>
+    <div style="padding: 22px 28px; display: flex; gap: 28px; align-items: center;">
+      <div style="display: flex; flex-direction: column; gap: 10px; flex-grow: 1;">
+        <div style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Attempts</div>
+        <div style="display: flex; align-items: center; gap: 0;">
+          <span style="display: flex; align-items: center; gap: 7px; font-size: 13px; color: #5F584C;"><span style="width: 8px; height: 8px; border-radius: 999px; background: #A33B2B;"></span>18 Sep</span>
+          <span style="width: 44px; height: 1px; background: #D3CABB; margin: 0 10px;"></span>
+          <span style="display: flex; align-items: center; gap: 7px; font-size: 13px; color: #5F584C;"><span style="width: 8px; height: 8px; border-radius: 999px; background: #A33B2B;"></span>21 Sep</span>
+          <span style="width: 44px; height: 1px; background: #D3CABB; margin: 0 10px;"></span>
+          <span style="display: flex; align-items: center; gap: 7px; font-size: 13px; color: #5F584C;"><span style="width: 8px; height: 8px; border-radius: 999px; background: #A33B2B;"></span>25 Sep</span>
+        </div>
+      </div>
+      <div style="display: flex; gap: 10px; flex-shrink: 0;">
+        <button style="height: 44px; padding: 0 20px; display: inline-flex; align-items: center; border: 1px solid #9C5B36; border-radius: 4px; background: #9C5B36; color: #FFFFFF; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">Update card and restart</button>
+        <button style="height: 44px; padding: 0 20px; display: inline-flex; align-items: center; border: 1px solid #D3CABB; border-radius: 4px; background: #FFFFFF; color: #1F1C17; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">Not now</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

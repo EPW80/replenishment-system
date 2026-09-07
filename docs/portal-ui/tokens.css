@@ -1,0 +1,99 @@
+/*
+ * CadenceOS portal and admin — design tokens
+ *
+ * Extracted from the artboards in ./artboards/. These are the resolved values, not a
+ * scale someone should re-derive: every number here appears in at least one artboard,
+ * and the artboards are the visual source of truth.
+ *
+ * Scope note. The portal is a headless widget embedded in the WordPress theme (spec
+ * §4), so these tokens have to survive landing inside somebody else's stylesheet.
+ * Namespace them under the widget root rather than :root when you embed, and set
+ * font-family and color explicitly on the widget container — inheritance from the
+ * theme is the failure mode that makes an embedded widget look broken.
+ *
+ * Deployment note. Spec §12 says a second brand should be a configuration change.
+ * These tokens are that configuration: the palette and the two font families are what
+ * a second node overrides. Nothing in components.md or screens.md depends on the
+ * values below, only on the token names.
+ */
+
+:root {
+  /* ---- Surfaces ------------------------------------------------------------ */
+  --cad-ground:        #FAF8F5;  /* page behind the cards */
+  --cad-surface:       #FFFFFF;  /* card face */
+  --cad-surface-sunk:  #F6F3EE;  /* inset panel inside a card */
+  --cad-surface-row:   #FBF9F6;  /* table header and footer strips */
+  --cad-surface-rail:  #F3EFE9;  /* admin sidebar */
+
+  /* ---- Borders ------------------------------------------------------------- */
+  --cad-border:          #E4DED4;  /* card and control outline */
+  --cad-border-strong:   #D3CABB;  /* button outline, axis baseline */
+  --cad-border-hairline: #EFEAE2;  /* row separators inside a card */
+
+  /* ---- Ink ----------------------------------------------------------------- */
+  --cad-ink:       #1F1C17;  /* primary text */
+  --cad-ink-muted: #5F584C;  /* secondary text, body copy */
+  --cad-ink-faint: #8B8375;  /* labels, eyebrows, captions */
+  --cad-ink-ghost: #A9A093;  /* sequence numbers, placeholder text */
+
+  /* ---- Accent -------------------------------------------------------------- */
+  --cad-accent:        #9C5B36;  /* primary button fill, links, chart marks */
+  --cad-accent-strong: #7E4829;  /* link hover, selected-chip text */
+  --cad-accent-tint:   #F6EDE6;  /* selected chip and radio fill */
+  --cad-accent-edge:   #C7A98D;  /* control outline inside a tinted panel */
+
+  /* ---- Status -------------------------------------------------------------- */
+  /* Reserved for schedule and occurrence state. Never reuse as a series color.
+     Every use pairs the color with a text label — see components.md, Status pill. */
+  --cad-ok:        #3F6B4F;  --cad-ok-text:   #35604A;  --cad-ok-tint:   #EBF1EC;
+  --cad-warn:      #8A6A21;  --cad-warn-text: #6B5216;  --cad-warn-tint: #F7F0DE;
+  --cad-warn-edge: #E4CF9E;  --cad-warn-band: #FBF3E2;
+  --cad-crit:      #A33B2B;  --cad-crit-text: #8F3325;  --cad-crit-tint: #F9EAE7;
+  --cad-crit-edge: #E0B3AA;  --cad-crit-band: #FAEDEA;
+  --cad-idle:      #8B8375;  --cad-idle-text: #57503F;  --cad-idle-tint: #F0EDE7;
+
+  /* ---- Type ---------------------------------------------------------------- */
+  /* Newsreader carries headings and figures; Public Sans carries everything a
+     person reads at length; IBM Plex Mono carries anything a person may need to
+     read back to support — IDs, dates, error classes, counts. */
+  --cad-font-serif: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --cad-font-sans:  'Public Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --cad-font-mono:  'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --cad-display:   30px;  /* "Friday, 18 September 2026" — the one number per card */
+  --cad-title:     22px;  /* sheet and card headings */
+  --cad-subtitle:  18px;  /* admin panel headings */
+  --cad-body:      15px;  /* portal body and row values */
+  --cad-body-sm:   14px;  /* dense portal text, control labels */
+  --cad-table:   13.5px;  /* admin table cells */
+  --cad-meta:      13px;  /* captions under a value */
+  --cad-label:     11px;  /* uppercase eyebrow, 0.08em tracking, 600 weight */
+
+  --cad-eyebrow-tracking: 0.08em;
+  --cad-line-body: 1.55;
+
+  /* ---- Shape --------------------------------------------------------------- */
+  --cad-radius-card:    6px;
+  --cad-radius-control: 4px;
+  --cad-radius-pill:    999px;
+  --cad-radius-bar:     4px;  /* rounded data-end on a chart mark */
+
+  /* ---- Controls ------------------------------------------------------------ */
+  /* 44px is the floor on any customer-facing control. The 34-40px sizes are admin
+     only: a desk tool with a mouse, not a phone in one hand. */
+  --cad-control:        44px;
+  --cad-control-mobile: 48px;
+  --cad-control-row:    36px;  /* per-row action inside a portal list */
+  --cad-control-admin:  36px;
+  --cad-control-nav:    38px;
+
+  /* ---- Spacing ------------------------------------------------------------- */
+  --cad-gap-tight:  8px;
+  --cad-gap:       10px;   /* between sibling controls */
+  --cad-gap-row:   14px;   /* between rows in a stack */
+  --cad-pad-inset: 18px;   /* inset panel padding */
+  --cad-pad-card:  22px;   /* admin card padding */
+  --cad-pad-sheet: 28px;   /* portal card padding, horizontal */
+  --cad-pad-page:  44px;   /* portal page gutter, desktop */
+  --cad-pad-phone: 18px;   /* portal page gutter, phone */
+}

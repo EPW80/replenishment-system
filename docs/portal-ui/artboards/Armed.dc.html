@@ -1,0 +1,70 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Public+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #FAF8F5; color: #1F1C17; font-family: 'Public Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #9C5B36; text-decoration: none; }
+    a:hover { color: #7E4829; text-decoration: underline; }
+  </style>
+</helmet>
+
+<div style="padding: 36px 44px 44px; display: flex; flex-direction: column; gap: 20px;">
+
+  <div style="display: flex; flex-direction: column; gap: 5px;">
+    <div style="font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Portal state &middot; armed at T&minus;72h</div>
+    <h1 style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-size: 26px; font-weight: 500;">The window before the charge</h1>
+  </div>
+
+  <div style="background: #FBF3E2; border: 1px solid #E4CF9E; border-radius: 6px; padding: 20px 24px; display: flex; gap: 16px; align-items: flex-start;">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8A6A21" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 2px;"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5.5l3.5 2"></path></svg>
+    <div style="display: flex; flex-direction: column; gap: 5px; flex-grow: 1;">
+      <div style="font-size: 16px; font-weight: 600; color: #6B5216;">Your next order is charged in 2 days</div>
+      <div style="font-size: 14px; line-height: 1.5; color: #6B5216;">We will charge your card on file and place the order on <strong style="font-weight: 600;">Friday, 18 September</strong>. Skip it or push it back before <strong style="font-weight: 600;">Wednesday, 16 September at 9:00 AM</strong> and nothing is charged.</div>
+    </div>
+    <div style="display: flex; gap: 10px; flex-shrink: 0; align-self: center;">
+      <button style="height: 44px; padding: 0 18px; display: inline-flex; align-items: center; border: 1px solid #C7A85E; border-radius: 4px; background: #FFFFFF; color: #5A4512; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">Push back</button>
+      <button style="height: 44px; padding: 0 18px; display: inline-flex; align-items: center; border: 1px solid #9C5B36; border-radius: 4px; background: #9C5B36; color: #FFFFFF; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">Skip this order</button>
+    </div>
+  </div>
+
+  <div style="background: #FFFFFF; border: 1px solid #E4DED4; border-radius: 6px; padding: 24px 28px; display: flex; gap: 28px; align-items: center;">
+    <div style="display: flex; flex-direction: column; gap: 9px; flex-grow: 1;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="display: inline-flex; align-items: center; gap: 7px; padding: 4px 11px 4px 9px; border-radius: 999px; background: #F7F0DE; color: #6B5216; font-size: 12px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 999px; background: #8A6A21;"></span>Charging soon</span>
+        <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 12px; color: #8B8375;">SCH&middot;8F2A41C9 &middot; occurrence #5</span>
+      </div>
+      <div style="font-family: 'Newsreader', Georgia, serif; font-size: 26px; font-weight: 500;">Friday, 18 September 2026</div>
+      <div style="font-size: 14px; color: #5F584C;">2 &times; HOH-1042 &middot; 1 &times; HOH-2210 &middot; 1 &times; HOH-3005 &nbsp;&mdash;&nbsp; [10]% recurring discount applied</div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 3px; align-items: flex-end; flex-shrink: 0;">
+      <div style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Order total</div>
+      <div style="font-family: 'Newsreader', Georgia, serif; font-size: 26px; font-weight: 500;">$[000.00]</div>
+    </div>
+  </div>
+
+  <div style="background: #FFFFFF; border: 1px solid #D3CABB; border-radius: 6px; padding: 26px 28px; display: flex; flex-direction: column; gap: 18px;">
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <h2 style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-size: 22px; font-weight: 500;">Skip the order on 18 September?</h2>
+      <p style="margin: 0; font-size: 14px; line-height: 1.55; color: #5F584C; max-width: 66ch; text-wrap: pretty;">You will not be charged for this one. Your schedule keeps its rhythm &mdash; the next order stays on <strong style="font-weight: 600; color: #1F1C17;">Friday, 16 October</strong>, exactly 28 days on from the one you are skipping.</p>
+    </div>
+    <div style="background: #F6F3EE; border: 1px solid #EFEAE2; border-radius: 4px; padding: 14px 16px; display: flex; align-items: center; gap: 12px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8B8375" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v5.5"></path><path d="M12 7.6v.3"></path></svg>
+      <span style="font-size: 13px; color: #5F584C;">Want the gap to be longer every time instead? <a href="#" style="font-weight: 600;">Change the interval</a> rather than skipping repeatedly.</span>
+    </div>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <button style="height: 44px; padding: 0 20px; display: inline-flex; align-items: center; border: 1px solid #9C5B36; border-radius: 4px; background: #9C5B36; color: #FFFFFF; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">Skip this order</button>
+      <button style="height: 44px; padding: 0 20px; display: inline-flex; align-items: center; border: 1px solid #D3CABB; border-radius: 4px; background: #FFFFFF; color: #1F1C17; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">Keep it</button>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

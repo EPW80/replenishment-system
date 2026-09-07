@@ -1,0 +1,91 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Public+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #FAF8F5; color: #1F1C17; font-family: 'Public Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #9C5B36; text-decoration: none; }
+    a:hover { color: #7E4829; text-decoration: underline; }
+  </style>
+</helmet>
+
+<div style="padding: 22px 18px 26px; display: flex; flex-direction: column; gap: 16px;">
+
+  <div style="display: flex; flex-direction: column; gap: 5px;">
+    <div style="font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #8B8375; font-weight: 600;">House of Helix &middot; Account</div>
+    <h1 style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-size: 26px; font-weight: 500; letter-spacing: -0.01em;">Recurring orders</h1>
+  </div>
+
+  <div style="background: #FFFFFF; border: 1px solid #E4DED4; border-radius: 6px; display: flex; flex-direction: column;">
+    <div style="padding: 18px 18px 16px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid #EFEAE2;">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+        <span style="display: inline-flex; align-items: center; gap: 7px; padding: 4px 11px 4px 9px; border-radius: 999px; background: #EBF1EC; color: #35604A; font-size: 12px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 999px; background: #3F6B4F;"></span>Active</span>
+        <span style="font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: #A9A093;">SCH&middot;8F2A41C9</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 3px;">
+        <div style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8B8375; font-weight: 600;">Next order</div>
+        <div style="font-family: 'Newsreader', Georgia, serif; font-size: 25px; font-weight: 500; line-height: 1.2;">Fri, 18 September</div>
+        <div style="font-size: 13px; color: #5F584C;">Repeats every 28 days &middot; 12 days away</div>
+      </div>
+      <div style="font-size: 13px; color: #5F584C; padding-top: 2px;">2 &times; HOH-1042 &middot; 1 &times; HOH-2210 &middot; 1 &times; HOH-3005</div>
+    </div>
+    <div style="padding: 14px 18px 16px; display: flex; gap: 10px;">
+      <button style="flex-grow: 1; height: 48px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #D3CABB; border-radius: 4px; background: #FFFFFF; color: #1F1C17; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Skip this one</button>
+      <button style="flex-grow: 1; height: 48px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #D3CABB; border-radius: 4px; background: #FFFFFF; color: #1F1C17; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Push back</button>
+    </div>
+  </div>
+
+  <div style="background: #FFFFFF; border: 1px solid #E4DED4; border-radius: 6px; padding: 16px 18px 8px; display: flex; flex-direction: column; gap: 4px;">
+    <div style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8B8375; font-weight: 600; padding-bottom: 8px;">Coming up</div>
+    <div style="display: flex; align-items: center; gap: 12px; padding: 13px 0; border-top: 1px solid #EFEAE2;">
+      <span style="width: 24px; flex-shrink: 0; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 12px; color: #A9A093;">#5</span>
+      <span style="flex-grow: 1; font-size: 15px; font-weight: 600;">18 Sep 2026</span>
+      <span style="font-size: 13px; color: #8B8375;">Scheduled</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px; padding: 13px 0; border-top: 1px solid #EFEAE2;">
+      <span style="width: 24px; flex-shrink: 0; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 12px; color: #A9A093;">#6</span>
+      <span style="flex-grow: 1; font-size: 15px; font-weight: 600;">16 Oct 2026</span>
+      <span style="font-size: 13px; color: #8B8375;">Scheduled</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px; padding: 13px 0; border-top: 1px solid #EFEAE2;">
+      <span style="width: 24px; flex-shrink: 0; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 12px; color: #A9A093;">#7</span>
+      <span style="flex-grow: 1; font-size: 15px; font-weight: 600;">13 Nov 2026</span>
+      <span style="font-size: 13px; color: #8B8375;">Scheduled</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px; padding: 13px 0; border-top: 1px solid #EFEAE2;">
+      <span style="width: 24px; flex-shrink: 0; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 12px; color: #A9A093;">#4</span>
+      <span style="flex-grow: 1; font-size: 15px; color: #5F584C;">21 Aug 2026</span>
+      <span style="display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: #35604A; font-weight: 600;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#35604A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"></path></svg>
+        Placed
+      </span>
+    </div>
+  </div>
+
+  <div style="background: #FFFFFF; border: 1px solid #E4DED4; border-radius: 6px; display: flex; flex-direction: column;">
+    <a href="#" style="min-height: 52px; padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #1F1C17; font-size: 15px; font-weight: 600;">
+      Change interval
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A9A093" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"></path></svg>
+    </a>
+    <a href="#" style="min-height: 52px; padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #1F1C17; font-size: 15px; font-weight: 600; border-top: 1px solid #EFEAE2;">
+      Pause orders
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A9A093" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"></path></svg>
+    </a>
+    <a href="#" style="min-height: 52px; padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #A33B2B; font-size: 15px; font-weight: 600; border-top: 1px solid #EFEAE2;">
+      Cancel recurring orders
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C99187" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"></path></svg>
+    </a>
+  </div>
+
+  <p style="margin: 0; font-size: 12px; line-height: 1.5; color: #8B8375; text-align: center; padding: 0 8px;">You can change or skip any order up to 72 hours before it is charged.</p>
+
+</div>
+</x-dc>
+</body>
+</html>
