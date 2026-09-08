@@ -173,7 +173,10 @@ func (h ScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return tx.AppendEvent(ctx, domain.ScheduleEvent{
 			ScheduleID: s.ID,
 			EventType:  domain.EventScheduleCreated,
-			Actor:      domain.ActorCustomer,
+			// This route requires the service credential (ADR 0006), not a customer
+			// JWT -- the service can verify a trusted backend called, not that a
+			// person clicked, so the actor records what it can verify.
+			Actor: domain.ActorSystem,
 		})
 	})
 
