@@ -22,6 +22,7 @@ var allActions = []domain.Action{
 	domain.ActionDefer,
 	domain.ActionChangeCadence,
 	domain.ActionCancel,
+	domain.ActionArm,
 }
 
 // Spec §10 asks for "every state-transition pair, including the invalid ones."
@@ -53,6 +54,11 @@ func TestEveryStateTransitionPair(t *testing.T) {
 			domain.ScheduleActive: true,
 			domain.SchedulePaused: true,
 			domain.ScheduleFailed: true,
+		},
+		// Not a spec §6 action -- ArmDue is its only caller -- but the same closed
+		// precondition set applies: only an active schedule has an order to arm.
+		domain.ActionArm: {
+			domain.ScheduleActive: true,
 		},
 	}
 

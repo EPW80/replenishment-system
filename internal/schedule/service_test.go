@@ -435,6 +435,150 @@ func TestSkipAndDeferRejectedOnPausedSchedule(t *testing.T) {
 	}
 }
 
+// ------------------------------------------------------------------------- arm
+
+// systemCaller is arm's only real caller (internal/sweep.ArmDue) -- these tests use it
+// so a mistaken customer-scoped precondition would show up here, not only in
+// production.
+var systemCaller = schedule.Caller{Actor: domain.ActorSystem, Scope: store.SystemScope()}
+
+func TestArmNextMovesTheSoonestOccurrenceToPending(t *testing.T) {
+	repo, svc := setup(t)
+	ctx := context.Background()
+	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
+	soonest := byStatus(occurrences(t, repo, s.ID), domain.OccurrencePlanned)[0]
+
+	if _, err := svc.ArmNext(ctx, s.ID, systemCaller); err != nil {
+		t.Fatalf("arm: %v", err)
+	}
+
+	got := occurrences(t, repo, s.ID)
+	if n := len(byStatus(got, domain.OccurrencePending)); n != 1 {
+		t.Fatalf("pending occurrences = %d, want 1", n)
+	}
+	pending := byStatus(got, domain.OccurrencePending)[0]
+	if pending.ID != soonest.ID {
+		t.Errorf("armed occurrence %s, want the soonest planned one (%s)", pending.ID, soonest.ID)
+	}
+
+	e := lastEvent(t, repo, s.ID)
+	if e.EventType != domain.EventOccurrenceArmed {
+		t.Fatalf("event type = %s, want %s", e.EventType, domain.EventOccurrenceArmed)
+	}
+	if e.Actor != domain.ActorSystem {
+		t.Errorf("actor = %s, want %s", e.Actor, domain.ActorSystem)
+	}
+	var payload struct {
+		SequenceNo   int    `json:"sequence_no"`
+		ScheduledFor string `json:"scheduled_for"`
+	}
+	if err := json.Unmarshal(e.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if payload.SequenceNo != soonest.SequenceNo || payload.ScheduledFor != soonest.ScheduledFor.String() {
+		t.Errorf("payload = %+v, want sequence_no=%d scheduled_for=%s",
+			payload, soonest.SequenceNo, soonest.ScheduledFor)
+	}
+}
+
+// Unlike SkipNext, arming must not top the horizon back up -- the occurrence is still
+// on the books, just no longer planned, so there is no gap for the materializer to
+// fill. A stray re-materialize call here would silently mask the one behaviour that
+// makes ArmNext different from its sibling.
+func TestArmNextDoesNotReMaterialize(t *testing.T) {
+	repo, svc := setup(t)
+	ctx := context.Background()
+	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
+	before := occurrences(t, repo, s.ID)
+
+	got, err := svc.ArmNext(ctx, s.ID, systemCaller)
+	if err != nil {
+		t.Fatalf("arm: %v", err)
+	}
+
+	after := occurrences(t, repo, s.ID)
+	if len(after) != len(before) {
+		t.Fatalf("occurrence count = %d, want %d (unchanged)", len(after), len(before))
+	}
+	wantNext := before[0].ScheduledFor // the same soonest occurrence, now pending
+	if got.NextRunDate == nil || !got.NextRunDate.Equal(wantNext) {
+		t.Errorf("next_run_date = %v, want %s (unchanged by arming)", got.NextRunDate, wantNext)
+	}
+}
+
+// ArmNext itself has no idempotency guard, and this is deliberate rather than an
+// omission: it always arms whatever is next planned, full stop, so two calls in a row
+// arm two different occurrences. The idempotency a nightly sweep needs comes entirely
+// from ArmDue deciding whether to call this at all — see
+// internal/sweep.TestArmDueIsIdempotent, where the same two calls against the same
+// starting state correctly arm only one, because the second occurrence has not yet
+// crossed the pre-billing window. Nothing here duplicates that decision, and this test
+// exists so nobody "fixes" ArmNext into duplicating it either.
+func TestArmNextArmsADifferentOccurrenceEachCall(t *testing.T) {
+	repo, svc := setup(t)
+	ctx := context.Background()
+	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
+
+	if _, err := svc.ArmNext(ctx, s.ID, systemCaller); err != nil {
+		t.Fatalf("first arm: %v", err)
+	}
+	if _, err := svc.ArmNext(ctx, s.ID, systemCaller); err != nil {
+		t.Fatalf("second arm: %v", err)
+	}
+
+	if n := len(byStatus(occurrences(t, repo, s.ID), domain.OccurrencePending)); n != 2 {
+		t.Errorf("pending occurrences = %d, want 2", n)
+	}
+	var armed int
+	events, err := repo.ListEvents(ctx, s.ID)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	for _, e := range events {
+		if e.EventType == domain.EventOccurrenceArmed {
+			armed++
+		}
+	}
+	if armed != 2 {
+		t.Errorf("occurrence.armed events = %d, want 2", armed)
+	}
+}
+
+// Once every planned occurrence in the horizon has been armed, there is nothing left
+// to arm — not a bug, the horizon is just fully committed until the materializer or a
+// transition creates more.
+func TestArmNextRejectsWhenNothingIsPlanned(t *testing.T) {
+	repo, svc := setup(t)
+	ctx := context.Background()
+	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
+
+	planned := len(byStatus(occurrences(t, repo, s.ID), domain.OccurrencePlanned))
+	for i := 0; i < planned; i++ {
+		if _, err := svc.ArmNext(ctx, s.ID, systemCaller); err != nil {
+			t.Fatalf("arm %d: %v", i, err)
+		}
+	}
+
+	if _, err := svc.ArmNext(ctx, s.ID, systemCaller); !domain.IsTransitionError(err) {
+		t.Errorf("arm with nothing planned returned %v, want a TransitionError", err)
+	}
+}
+
+// Mirrors TestSkipAndDeferRejectedOnPausedSchedule: only an active schedule has an
+// order worth arming.
+func TestArmNextRejectedOnPausedSchedule(t *testing.T) {
+	repo, svc := setup(t)
+	ctx := context.Background()
+	s := newActive(t, repo, domain.NewDate(2026, time.January, 1), 30)
+	if _, err := svc.Pause(ctx, s.ID, nil, anyCaller); err != nil {
+		t.Fatalf("pause: %v", err)
+	}
+
+	if _, err := svc.ArmNext(ctx, s.ID, systemCaller); !domain.IsTransitionError(err) {
+		t.Errorf("arm on a paused schedule returned %v, want a TransitionError", err)
+	}
+}
+
 // ---------------------------------------------------------------- change cadence
 
 // Spec §6: a cadence change re-anchors to the last placed order, so the new interval

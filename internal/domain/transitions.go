@@ -6,7 +6,8 @@ import (
 	"net/mail"
 )
 
-// Action is one of the six customer- or admin-initiated transitions in spec §6.
+// Action is one of the customer- or admin-initiated transitions in spec §6, plus Arm
+// (spec §5 step 2), the one transition a system pass takes on its own.
 //
 // The string values are the spec's own names for them, so an event payload, an API
 // path and this constant all read the same way.
@@ -19,7 +20,24 @@ const (
 	ActionDefer         Action = "defer"
 	ActionChangeCadence Action = "change_cadence"
 	ActionCancel        Action = "cancel"
+
+	// ActionArm moves the soonest planned occurrence to pending once it is within
+	// ArmWindowDays of its date. Unlike every action above, no customer or admin ever
+	// requests it directly -- internal/sweep.ArmDue is its only caller.
+	ActionArm Action = "arm"
 )
+
+// ArmWindowDays is spec §5's pre-billing window, expressed at the day granularity
+// domain.Date works in rather than as an hour count.
+//
+// The spec calls this a 72-hour window, and open decision §11.5 has not yet confirmed
+// that figure against fulfillment lead time. This constant is the provisional
+// day-level reading of it: occurrences.scheduled_for is a date column, and domain.Date
+// carries no time-of-day anywhere else in this package, so "72 hours" becomes "3
+// calendar days" rather than introducing the first hour-precision check in the
+// service. If §11.5 later demands finer precision, that is a schema change
+// (scheduled_for to timestamptz), not a tweak to this constant.
+const ArmWindowDays = 3
 
 // MaxDeferDays is the absolute cap on a single deferral, set to the longest cadence
 // the service supports.
@@ -70,6 +88,13 @@ var scheduleTransitions = map[Action][]ScheduleStatus{
 	// "any non-canceled" (spec §6). A failed schedule is a recoverable asset (§7), so
 	// it stays cancelable — that is how a customer ends one after dunning gives up.
 	ActionCancel: {ScheduleActive, SchedulePaused, ScheduleFailed},
+
+	// Same precondition as SkipNext and Defer: only an active schedule has an order
+	// worth arming. ArmDue only ever lists active schedules, so this is normally
+	// unreachable -- it exists for the race where a customer pauses or cancels between
+	// that listing and the lock, in which case it is exactly the outcome ArmDue treats
+	// as AlreadyMoved, not a failure.
+	ActionArm: {ScheduleActive},
 }
 
 // transitionMessages explains a rejection in commerce terms.
@@ -100,6 +125,14 @@ var transitionMessages = map[Action]map[ScheduleStatus]string{
 	},
 	ActionCancel: {
 		ScheduleCanceled: "this schedule has already been canceled",
+	},
+	// Not customer-facing -- no HTTP route ever returns this message -- but kept for
+	// the same reason every other action's messages exist: a log line naming the race
+	// ArmDue hit is more useful than the generic fallback below.
+	ActionArm: {
+		SchedulePaused:   "this schedule is paused, so no order is due to be armed",
+		ScheduleCanceled: "this schedule has been canceled",
+		ScheduleFailed:   "this schedule needs a payment method update before an order can be armed",
 	},
 }
 

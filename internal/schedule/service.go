@@ -257,6 +257,49 @@ func (svc *Service) SkipNext(ctx context.Context, scheduleID, idempotencyKey str
 		})
 }
 
+// ArmNext opens the pre-billing window on the soonest planned order (spec §5 step 2).
+//
+// Only internal/sweep.ArmDue calls this — no customer or admin route reaches it, so
+// caller is always a system caller. Unlike SkipNext, this needs no idempotency key:
+// arming is not a customer request that a network retry could duplicate, and its
+// idempotency is structural rather than key-based. Once armed, the occurrence is no
+// longer planned, so a second call finds nothing via NextPlannedOccurrence and returns
+// a TransitionError -- the same outcome ArmDue treats as AlreadyMoved when a customer
+// races it by pausing or canceling.
+//
+// Nothing is re-materialized afterward. Arming does not consume the occurrence the way
+// SkipNext and a placed order do -- it stays exactly where it was in the horizon, only
+// its status changes -- so there is no gap for the materializer to fill.
+func (svc *Service) ArmNext(ctx context.Context, scheduleID string, caller Caller) (domain.Schedule, error) {
+	return svc.transition(ctx, scheduleID, domain.ActionArm, caller,
+		func(tx store.Repository, s domain.Schedule) error {
+			occ, err := tx.NextPlannedOccurrence(ctx, s.ID)
+			if errors.Is(err, store.ErrNotFound) {
+				return &domain.TransitionError{
+					Action:  domain.ActionArm,
+					Status:  s.Status,
+					Message: "no planned order is due to be armed",
+				}
+			}
+			if err != nil {
+				return fmt.Errorf("find next planned order: %w", err)
+			}
+
+			if err := tx.UpdateOccurrenceStatus(ctx, occ.ID, domain.OccurrencePending); err != nil {
+				return err
+			}
+			return tx.AppendEvent(ctx, domain.ScheduleEvent{
+				ScheduleID: s.ID,
+				EventType:  domain.EventOccurrenceArmed,
+				Actor:      caller.Actor,
+				Payload: payload(map[string]any{
+					"sequence_no":   occ.SequenceNo,
+					"scheduled_for": occ.ScheduledFor.String(),
+				}),
+			})
+		})
+}
+
 // Defer pushes the soonest upcoming order back by days (spec §6).
 //
 // The anchor does not move. That is the deliberate choice in spec §6: a customer who

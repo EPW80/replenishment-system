@@ -346,3 +346,293 @@ func countEvents(t *testing.T, repo *store.PostgresRepository, scheduleID string
 	}
 	return n
 }
+
+// materializeAt runs the materializer for s as of today, producing its planned
+// occurrences. Occurrences are never hand-inserted in these tests, the same way
+// materialize_test.go itself never hand-inserts them -- CreateOccurrence's
+// idempotency key and sequence numbering are the materializer's job, not a test's.
+func materializeAt(t *testing.T, repo *store.PostgresRepository, s domain.Schedule, today domain.Date) {
+	t.Helper()
+	if _, _, err := materialize.New(repo, 3, nil).Run(context.Background(), s, today); err != nil {
+		t.Fatalf("materialize: %v", err)
+	}
+}
+
+// newScheduleWithOccurrenceOn creates an active schedule whose soonest planned
+// occurrence lands on occDate, then materializes as of materializeToday to produce it
+// (plus two more, the default horizon, 60 days apart -- far enough that they never
+// fall inside the same arm window as occDate in these tests).
+func newScheduleWithOccurrenceOn(t *testing.T, repo *store.PostgresRepository, tz string, occDate, materializeToday domain.Date) domain.Schedule {
+	t.Helper()
+	const interval = 60
+	s := domain.Schedule{
+		ID:            uuid.NewString(),
+		CustomerID:    "cust_" + uuid.NewString()[:8],
+		OriginOrderID: "order_" + uuid.NewString(),
+		Status:        domain.ScheduleActive,
+		IntervalDays:  interval,
+		AnchorDate:    occDate.AddDays(-interval),
+		Timezone:      tz,
+	}
+	if err := repo.CreateSchedule(context.Background(), s, []domain.ScheduleItem{{
+		ID: uuid.NewString(), ScheduleID: s.ID, SKU: "SKU-A", Quantity: 1,
+	}}); err != nil {
+		t.Fatalf("create schedule: %v", err)
+	}
+	materializeAt(t, repo, s, materializeToday)
+	return s
+}
+
+// The window this pass exists to open: an occurrence just inside ArmWindowDays must
+// be armed, with its date and sequence recorded on the event.
+func TestArmDueArmsAPlannedOccurrenceInsideTheWindow(t *testing.T) {
+	repo := newRepo(t)
+	occDate := domain.NewDate(2026, time.March, 10)
+	s := newScheduleWithOccurrenceOn(t, repo, "UTC", occDate,
+		domain.NewDate(2026, time.March, 1))
+
+	_, swp := at(repo, time.Date(2026, time.March, 8, 12, 0, 0, 0, time.UTC))
+	res, err := swp.ArmDue(context.Background())
+	if err != nil {
+		t.Fatalf("arm due: %v", err)
+	}
+	if res.Armed != 1 {
+		t.Errorf("armed = %d, want 1 (result: %+v)", res.Armed, res)
+	}
+
+	occs, err := repo.ListOccurrences(context.Background(), s.ID, store.SystemScope())
+	if err != nil {
+		t.Fatalf("list occurrences: %v", err)
+	}
+	if len(occs) == 0 || occs[0].Status != domain.OccurrencePending {
+		t.Fatalf("occurrence #1 status = %+v, want pending", occs)
+	}
+}
+
+// Exactly ArmWindowDays out is due, not one day short of it -- the boundary matches
+// ResumeDue's own inclusive reading of "come due".
+func TestArmDueIsInclusiveOfTheWindowBoundary(t *testing.T) {
+	repo := newRepo(t)
+	occDate := domain.NewDate(2026, time.March, 10)
+	newScheduleWithOccurrenceOn(t, repo, "UTC", occDate, domain.NewDate(2026, time.March, 1))
+
+	_, swp := at(repo, time.Date(2026, time.March, 7, 12, 0, 0, 0, time.UTC))
+	res, err := swp.ArmDue(context.Background())
+	if err != nil {
+		t.Fatalf("arm due: %v", err)
+	}
+	if res.Armed != 1 {
+		t.Errorf("armed = %d, want 1 — exactly on the window boundary (result: %+v)", res.Armed, res)
+	}
+}
+
+func TestArmDueLeavesAnOccurrenceThatHasNotComeDue(t *testing.T) {
+	repo := newRepo(t)
+	occDate := domain.NewDate(2026, time.March, 10)
+	newScheduleWithOccurrenceOn(t, repo, "UTC", occDate, domain.NewDate(2026, time.March, 1))
+
+	// One day short of the window.
+	_, swp := at(repo, time.Date(2026, time.March, 6, 12, 0, 0, 0, time.UTC))
+	res, err := swp.ArmDue(context.Background())
+	if err != nil {
+		t.Fatalf("arm due: %v", err)
+	}
+	if res.Armed != 0 {
+		t.Errorf("armed = %d, want 0", res.Armed)
+	}
+	if res.NotYetDue != 1 {
+		t.Errorf("not_yet_due = %d, want 1 (result: %+v)", res.NotYetDue, res)
+	}
+}
+
+func TestArmDueRespectsTheCustomerTimezone(t *testing.T) {
+	repo := newRepo(t)
+	occDate := domain.NewDate(2026, time.March, 10)
+
+	// UTC-10. At 2026-03-07T05:00Z it is still 2026-03-06 in Honolulu, so the window
+	// (opens 2026-03-07 local) has not opened yet.
+	newScheduleWithOccurrenceOn(t, repo, "Pacific/Honolulu", occDate, domain.NewDate(2026, time.March, 1))
+
+	_, swp := at(repo, time.Date(2026, time.March, 7, 5, 0, 0, 0, time.UTC))
+	res, err := swp.ArmDue(context.Background())
+	if err != nil {
+		t.Fatalf("arm due: %v", err)
+	}
+	if res.Armed != 0 {
+		t.Errorf("armed = %d, want 0 — still 2026-03-06 in Honolulu", res.Armed)
+	}
+	if res.NotYetDue != 1 {
+		t.Errorf("not_yet_due = %d, want 1 (result: %+v)", res.NotYetDue, res)
+	}
+
+	// Later the same UTC day, Honolulu has turned over to 2026-03-07.
+	_, later := at(repo, time.Date(2026, time.March, 7, 20, 0, 0, 0, time.UTC))
+	res, err = later.ArmDue(context.Background())
+	if err != nil {
+		t.Fatalf("arm due: %v", err)
+	}
+	if res.Armed != 1 {
+		t.Errorf("armed = %d, want 1 (result: %+v)", res.Armed, res)
+	}
+}
+
+// A timezone ahead of UTC reaches its arm day first. The listing's extra day is what
+// keeps it from waiting an entire run cycle.
+func TestArmDueCatchesATimezoneAheadOfUTC(t *testing.T) {
+	repo := newRepo(t)
+	occDate := domain.NewDate(2026, time.March, 10)
+
+	// UTC+13. At 2026-03-06T22:00Z it is already 2026-03-07 in Auckland.
+	newScheduleWithOccurrenceOn(t, repo, "Pacific/Auckland", occDate, domain.NewDate(2026, time.March, 1))
+
+	_, swp := at(repo, time.Date(2026, time.March, 6, 22, 0, 0, 0, time.UTC))
+	res, err := swp.ArmDue(context.Background())
+	if err != nil {
+		t.Fatalf("arm due: %v", err)
+	}
+	if res.Armed != 1 {
+		t.Errorf("armed = %d, want 1 — already 2026-03-07 in Auckland (result: %+v)", res.Armed, res)
+	}
+}
+
+// The job runs nightly and will see the same schedule again. A second pass must be a
+// no-op: the armed occurrence is no longer planned, so it drops out of the listing
+// entirely rather than being reported as AlreadyMoved.
+func TestArmDueIsIdempotent(t *testing.T) {
+	repo := newRepo(t)
+	occDate := domain.NewDate(2026, time.March, 10)
+	s := newScheduleWithOccurrenceOn(t, repo, "UTC", occDate, domain.NewDate(2026, time.March, 1))
+
+	_, swp := at(repo, time.Date(2026, time.March, 10, 12, 0, 0, 0, time.UTC))
+
+	if _, err := swp.ArmDue(context.Background()); err != nil {
+		t.Fatalf("first pass: %v", err)
+	}
+	res, err := swp.ArmDue(context.Background())
+	if err != nil {
+		t.Fatalf("second pass: %v", err)
+	}
+	if res.Considered != 0 {
+		t.Errorf("considered = %d, want 0 — no planned occurrence is inside the window any more (result: %+v)", res.Considered, res)
+	}
+
+	if n := countEvents(t, repo, s.ID, domain.EventOccurrenceArmed); n != 1 {
+		t.Errorf("armed events = %d, want exactly 1", n)
+	}
+}
+
+// The event log records what actually happened. Nobody signed in to cause this, so it
+// must not claim a customer did.
+func TestArmDueRecordsTheSystemActor(t *testing.T) {
+	repo := newRepo(t)
+	occDate := domain.NewDate(2026, time.March, 10)
+	s := newScheduleWithOccurrenceOn(t, repo, "UTC", occDate, domain.NewDate(2026, time.March, 1))
+
+	_, swp := at(repo, time.Date(2026, time.March, 10, 12, 0, 0, 0, time.UTC))
+	if _, err := swp.ArmDue(context.Background()); err != nil {
+		t.Fatalf("arm due: %v", err)
+	}
+
+	events, err := repo.ListEvents(context.Background(), s.ID)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	var found bool
+	for _, e := range events {
+		if e.EventType != domain.EventOccurrenceArmed {
+			continue
+		}
+		found = true
+		if e.Actor != domain.ActorSystem {
+			t.Errorf("actor = %s, want %s", e.Actor, domain.ActorSystem)
+		}
+	}
+	if !found {
+		t.Fatal("no occurrence.armed event recorded")
+	}
+}
+
+// A paused schedule's occurrence was already canceled by Pause itself (spec §6), so
+// there is nothing left to arm -- confirming this doubles as confirming Pause's own
+// cancellation reaches occurrences an arm pass would otherwise have found.
+func TestArmDueIgnoresPausedSchedules(t *testing.T) {
+	repo := newRepo(t)
+	occDate := domain.NewDate(2026, time.March, 10)
+	s := newScheduleWithOccurrenceOn(t, repo, "UTC", occDate, domain.NewDate(2026, time.March, 1))
+
+	svc, _ := at(repo, time.Date(2026, time.March, 5, 12, 0, 0, 0, time.UTC))
+	if _, err := svc.Pause(context.Background(), s.ID, nil, customer(s.CustomerID)); err != nil {
+		t.Fatalf("pause: %v", err)
+	}
+
+	_, swp := at(repo, time.Date(2026, time.March, 10, 12, 0, 0, 0, time.UTC))
+	res, err := swp.ArmDue(context.Background())
+	if err != nil {
+		t.Fatalf("arm due: %v", err)
+	}
+	if res.Considered != 0 || res.Armed != 0 {
+		t.Errorf("result = %+v, want nothing considered or armed", res)
+	}
+}
+
+// A missed run can leave more than one occurrence inside the window at once. Only the
+// soonest is armed per pass -- the next one waits for the following pass, matching how
+// the pre-billing notice for a later order should never arrive before the one for an
+// earlier order it belongs to.
+func TestArmDueArmsOnlyTheSoonestPlannedOccurrence(t *testing.T) {
+	repo := newRepo(t)
+	const interval = 7 // domain.MinIntervalDays
+	s := domain.Schedule{
+		ID:            uuid.NewString(),
+		CustomerID:    "cust_" + uuid.NewString()[:8],
+		OriginOrderID: "order_" + uuid.NewString(),
+		Status:        domain.ScheduleActive,
+		IntervalDays:  interval,
+		AnchorDate:    domain.NewDate(2026, time.February, 27), // occ #1 = Mar 6
+		Timezone:      "UTC",
+	}
+	if err := repo.CreateSchedule(context.Background(), s, []domain.ScheduleItem{{
+		ID: uuid.NewString(), ScheduleID: s.ID, SKU: "SKU-A", Quantity: 1,
+	}}); err != nil {
+		t.Fatalf("create schedule: %v", err)
+	}
+	materializeAt(t, repo, s, domain.NewDate(2026, time.January, 1))
+
+	// Occurrences land Mar 6, Mar 13, Mar 20. At Mar 10, both Mar 6 (cutoff Mar 3) and
+	// Mar 13 (cutoff Mar 10) are inside the window -- a stand-in for a sweep that
+	// missed a run.
+	_, swp := at(repo, time.Date(2026, time.March, 10, 12, 0, 0, 0, time.UTC))
+
+	res, err := swp.ArmDue(context.Background())
+	if err != nil {
+		t.Fatalf("first pass: %v", err)
+	}
+	if res.Armed != 1 {
+		t.Errorf("armed = %d, want 1 — only the soonest planned occurrence (result: %+v)", res.Armed, res)
+	}
+
+	occs, err := repo.ListOccurrences(context.Background(), s.ID, store.SystemScope())
+	if err != nil {
+		t.Fatalf("list occurrences: %v", err)
+	}
+	var pending, planned int
+	for _, o := range occs {
+		switch o.Status {
+		case domain.OccurrencePending:
+			pending++
+		case domain.OccurrencePlanned:
+			planned++
+		}
+	}
+	if pending != 1 || planned != 2 {
+		t.Errorf("pending=%d planned=%d, want 1 pending and 2 still planned", pending, planned)
+	}
+
+	res, err = swp.ArmDue(context.Background())
+	if err != nil {
+		t.Fatalf("second pass: %v", err)
+	}
+	if res.Armed != 1 {
+		t.Errorf("second pass armed = %d, want 1 — the occurrence due Mar 13 (cutoff Mar 10, boundary inclusive) (result: %+v)", res.Armed, res)
+	}
+}
