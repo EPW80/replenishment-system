@@ -35,8 +35,9 @@ const visibilityTimeout = 15 * time.Minute
 // retry forever and crowd out newer notifications.
 const maxAttempts = 5
 
-// batchSize is how much work one RunAll claims. Generous for a nightly volume of
-// pause/resume/cancel/create events; revisit if that assumption stops holding.
+// batchSize is how much work one claim page holds. RunAll pages through claims of
+// this size until a page comes back short, so this bounds memory and lock duration
+// per page rather than capping how much a single RunAll invocation can process.
 const batchSize = 200
 
 // notifiableEventTypes are the four spec §7 events this package sends for.
@@ -75,35 +76,56 @@ type Result struct {
 	SendFailed int // Postmark rejected or errored; recorded in notification_log
 }
 
-// RunAll claims outstanding work and attempts each. A failure sending one
-// notification does not abort the run — that would let one bad address block every
-// other customer's confirmation. Failures are logged and recorded (MarkNotificationFailed);
-// RunAll itself returns an error only for a claim or bookkeeping failure severe enough
-// that no notifications could be processed at all.
+// RunAll claims and attempts every outstanding notification, paging through claims
+// of batchSize until a page comes back short, so one invocation drains the full
+// backlog rather than leaving anything past the first page for tomorrow.
+//
+// A failure sending one notification does not abort the run — that would let one bad
+// address block every other customer's confirmation. Send failures are recorded via
+// MarkNotificationFailed and reported as outcomeSendFailed, not a Go error. But a
+// failure to even look up the schedule, render the template, or update
+// notification_log leaves that event still claimed rather than resolved; RunAll logs
+// it, moves on to the next event, and returns the first such error once the backlog
+// is drained, so cmd/notify's exit code reflects incomplete processing instead of
+// reporting success while a stuck event silently awaits its visibility timeout.
 func (d *Dispatcher) RunAll(ctx context.Context) (Result, error) {
-	events, err := d.repo.ClaimNotifiableEvents(ctx, notifiableEventTypes, visibilityTimeout, batchSize)
-	if err != nil {
-		return Result{}, fmt.Errorf("claim notifiable events: %w", err)
-	}
-
-	res := Result{Claimed: len(events)}
-	for _, e := range events {
-		outcome, err := d.dispatchOne(ctx, e)
+	var res Result
+	var firstErr error
+	for {
+		events, err := d.repo.ClaimNotifiableEvents(ctx, notifiableEventTypes, visibilityTimeout, batchSize)
 		if err != nil {
-			d.log.Error("dispatch notification failed",
-				"schedule_event_id", e.ScheduleEventID, "event_type", e.EventType, "error", err)
-			continue
+			if firstErr == nil {
+				firstErr = fmt.Errorf("claim notifiable events: %w", err)
+			}
+			break
 		}
-		switch outcome {
-		case outcomeSent:
-			res.Sent++
-		case outcomeSkipped:
-			res.Skipped++
-		case outcomeSendFailed:
-			res.SendFailed++
+		res.Claimed += len(events)
+
+		for _, e := range events {
+			outcome, err := d.dispatchOne(ctx, e)
+			if err != nil {
+				d.log.Error("dispatch notification failed",
+					"schedule_event_id", e.ScheduleEventID, "event_type", e.EventType, "error", err)
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
+			}
+			switch outcome {
+			case outcomeSent:
+				res.Sent++
+			case outcomeSkipped:
+				res.Skipped++
+			case outcomeSendFailed:
+				res.SendFailed++
+			}
+		}
+
+		if len(events) < batchSize {
+			break
 		}
 	}
-	return res, nil
+	return res, firstErr
 }
 
 type outcome int
