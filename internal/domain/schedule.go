@@ -159,4 +159,11 @@ const (
 	EventScheduleCanceled       = "schedule.canceled"
 	EventOccurrenceSkipped      = "occurrence.skipped"
 	EventOccurrenceDeferred     = "occurrence.deferred"
+
+	// EventOccurrenceArmed is spec §5 step 2: the soonest planned occurrence moved to
+	// pending, ArmWindowDays out from its date. Actor is always system --
+	// internal/sweep.ArmDue is the only caller. Recorded here under the same string
+	// docs/portal-ui/artboards/AdminFailures.dc.html already renders in its event-log
+	// strip, so this is not a free naming choice.
+	EventOccurrenceArmed = "occurrence.armed"
 )

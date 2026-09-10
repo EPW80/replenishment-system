@@ -9,8 +9,9 @@
 // placed; it never records, infers or reports anything about the product being used
 // (spec §2).
 //
-// Spec §5 step 4 Reconcile lands here too, once there is an execution path to
-// reconcile against.
+// Two passes today: ResumeDue (spec §6 resume) and ArmDue (spec §5 step 2, the
+// pre-billing window). Spec §5 step 4 Reconcile lands here too, once there is an
+// execution path to reconcile against.
 package sweep
 
 import (
@@ -112,6 +113,95 @@ func (s *Sweeper) ResumeDue(ctx context.Context) (ResumeResult, error) {
 		res.Resumed++
 		s.log.Info("resumed schedule", "schedule_id", sched.ID,
 			"paused_until", sched.PausedUntil.String())
+	}
+
+	return res, firstErr
+}
+
+// ArmResult reports what one arm pass did.
+type ArmResult struct {
+	Considered int
+	Armed      int
+
+	// NotYetDue counts schedules whose soonest planned occurrence has not yet crossed
+	// ArmWindowDays in the schedule's own timezone, or that had nothing planned to
+	// arm at all (already armed, or the materializer has not caught up yet). Both are
+	// "nothing to do," not a failure — a later run picks them up.
+	NotYetDue int
+
+	// AlreadyMoved counts schedules a customer paused, canceled, or otherwise changed
+	// between the listing and the lock. Not a failure: the customer's action wins.
+	AlreadyMoved int
+}
+
+// ArmDue opens the pre-billing window (spec §5 step 2) on every occurrence that has
+// come within ArmWindowDays of its date.
+//
+// The date-due decision lives here, not in Service.ArmNext, for the same reason
+// ResumeDue — not Service.Resume — decides whether a pause has come due: ArmNext
+// trusts its caller to have already decided an occurrence is actually due, and only
+// this loop has each schedule's own timezone to decide that against.
+//
+// One schedule's failure does not abort the run, matching ResumeDue: a single bad
+// schedule must not strand every other customer's pre-billing notice. Failures are
+// logged and the run continues, returning the first error once every candidate has
+// been attempted.
+func (s *Sweeper) ArmDue(ctx context.Context) (ArmResult, error) {
+	runDate := domain.DateOf(s.now().UTC())
+
+	candidates, err := s.repo.ListSchedulesDueToArm(ctx, runDate)
+	if err != nil {
+		return ArmResult{}, fmt.Errorf("list schedules due to arm: %w", err)
+	}
+
+	var res ArmResult
+	var firstErr error
+
+	for _, sched := range candidates {
+		res.Considered++
+
+		// The listing over-selects (ArmWindowDays plus a day); this is where the
+		// customer's own calendar decides. A schedule can appear here with nothing
+		// left to arm — its one eligible occurrence was already armed by an earlier
+		// run this same pass touched, or the materializer has not produced one yet —
+		// which reads as "nothing due" rather than an error.
+		occ, err := s.repo.NextPlannedOccurrence(ctx, sched.ID)
+		if errors.Is(err, store.ErrNotFound) {
+			res.NotYetDue++
+			continue
+		}
+		if err != nil {
+			s.log.Error("find next planned order failed", "schedule_id", sched.ID, "error", err)
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+
+		cutoff := occ.ScheduledFor.AddDays(-domain.ArmWindowDays)
+		if cutoff.After(s.todayFor(sched)) {
+			res.NotYetDue++
+			continue
+		}
+
+		// ArmNext locks the row and re-resolves the target, so a schedule the
+		// customer paused or canceled since the listing fails here rather than being
+		// written over. That is the intended outcome, not an error to report.
+		if _, err := s.svc.ArmNext(ctx, sched.ID, systemCaller()); err != nil {
+			if domain.IsTransitionError(err) || errors.Is(err, store.ErrNotFound) {
+				res.AlreadyMoved++
+				continue
+			}
+			s.log.Error("arm schedule failed", "schedule_id", sched.ID, "error", err)
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+
+		res.Armed++
+		s.log.Info("armed order", "schedule_id", sched.ID,
+			"sequence_no", occ.SequenceNo, "scheduled_for", occ.ScheduledFor.String())
 	}
 
 	return res, firstErr

@@ -73,6 +73,19 @@ type Repository interface {
 	//
 	// A NULL paused_until is an indefinite pause and is never returned.
 	ListSchedulesDueToResume(ctx context.Context, on domain.Date) ([]domain.Schedule, error)
+
+	// ListSchedulesDueToArm returns active schedules with at least one planned
+	// occurrence close enough to arm, for the sweep that opens the pre-billing window
+	// (spec §5 step 2).
+	//
+	// Like ListSchedulesDueToResume, on is the bare run date and the query widens it
+	// itself (by ArmWindowDays plus one more): "due" is a question about the
+	// customer's calendar and this query only knows the run date. The caller narrows
+	// to each schedule's own timezone before treating an occurrence as actually due.
+	// This returns candidate schedules, not the occurrence itself --
+	// NextPlannedOccurrence resolves which one, under the same lock that arms it.
+	ListSchedulesDueToArm(ctx context.Context, on domain.Date) ([]domain.Schedule, error)
+
 	ListScheduleItems(ctx context.Context, scheduleID string, scope Scope) ([]domain.ScheduleItem, error)
 	UpdateScheduleNextRun(ctx context.Context, scheduleID string, next *domain.Date) error
 
@@ -120,6 +133,14 @@ type Repository interface {
 	CancelUnexecutedOccurrences(ctx context.Context, scheduleID string) (int, error)
 	CancelPlannedOccurrences(ctx context.Context, scheduleID string) (int, error)
 	NextActionableOccurrence(ctx context.Context, scheduleID string) (domain.Occurrence, error)
+
+	// NextPlannedOccurrence returns the soonest occurrence still planned -- unlike
+	// NextActionableOccurrence, an occurrence already pending (already armed) does not
+	// qualify. ArmNext uses this to find what to arm; reusing NextActionableOccurrence
+	// here would let a second arm pass treat an already-armed occurrence as a valid
+	// target.
+	NextPlannedOccurrence(ctx context.Context, scheduleID string) (domain.Occurrence, error)
+
 	LastPlacedOccurrence(ctx context.Context, scheduleID string) (domain.Occurrence, error)
 	LatestScheduledDate(ctx context.Context, scheduleID string) (*domain.Date, error)
 
@@ -375,6 +396,18 @@ func (r *PostgresRepository) ListSchedulesDueToResume(ctx context.Context, on do
 		   AND paused_until <= $1
 		 ORDER BY paused_until, created_at`,
 		on.AddDays(1).ToTime())
+}
+
+// ListSchedulesDueToArm is documented on Repository.
+func (r *PostgresRepository) ListSchedulesDueToArm(ctx context.Context, on domain.Date) ([]domain.Schedule, error) {
+	return r.querySchedules(ctx, `
+		WHERE status = 'active'
+		  AND id IN (
+			SELECT schedule_id FROM occurrences
+			WHERE status = 'planned' AND scheduled_for <= $1
+		  )
+		ORDER BY id`,
+		on.AddDays(domain.ArmWindowDays+1).ToTime())
 }
 
 func (r *PostgresRepository) ListScheduleItems(ctx context.Context, scheduleID string, scope Scope) ([]domain.ScheduleItem, error) {
@@ -790,6 +823,17 @@ func (r *PostgresRepository) cancelOccurrences(ctx context.Context, scheduleID s
 func (r *PostgresRepository) NextActionableOccurrence(ctx context.Context, scheduleID string) (domain.Occurrence, error) {
 	return r.queryOneOccurrence(ctx, `
 		WHERE schedule_id = $1 AND status IN ('planned','pending')
+		ORDER BY scheduled_for, sequence_no LIMIT 1`, scheduleID)
+}
+
+// NextPlannedOccurrence is documented on Repository.
+//
+// planned only, deliberately narrower than NextActionableOccurrence's
+// planned-or-pending: an occurrence already pending is already armed, and must not
+// look like a valid target for a second arm pass.
+func (r *PostgresRepository) NextPlannedOccurrence(ctx context.Context, scheduleID string) (domain.Occurrence, error) {
+	return r.queryOneOccurrence(ctx, `
+		WHERE schedule_id = $1 AND status = 'planned'
 		ORDER BY scheduled_for, sequence_no LIMIT 1`, scheduleID)
 }
 
