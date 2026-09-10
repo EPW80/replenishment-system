@@ -1,10 +1,15 @@
 // Command notify sends the Phase 4 transactional emails (spec §7): schedule created,
 // paused, resumed, and canceled.
 //
-// Intended to run nightly, alongside materialize and sweep. It is safe to run
-// concurrently with itself or retry after a failure: delivery is at-least-once, not
-// exactly-once (docs/adr/0010), so a duplicate confirmation email is the accepted cost
-// rather than something this command works to prevent.
+// Runs on its own five-minute schedule, deliberately not alongside materialize and
+// sweep in scripts/nightly.sh: spec §7 gives these sends a Timing of "immediate", which
+// a nightly pass cannot honour, and this is the one job that needs Postmark credentials
+// the other two never present. See docs/adr/0012.
+//
+// It is safe to run concurrently with itself or retry after a failure: delivery is
+// at-least-once, not exactly-once (docs/adr/0010), so a duplicate confirmation email is
+// the accepted cost rather than something this command works to prevent. Overlapping
+// runs need no coordination — ClaimNotifiableEvents skips rows another run holds.
 //
 // Unlike materialize and sweep, this is the one job that needs Postmark configured —
 // config.Load leaves POSTMARK_API_KEY, NOTIFICATION_FROM_ADDRESS and

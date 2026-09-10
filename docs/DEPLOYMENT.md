@@ -41,7 +41,7 @@ Per environment, on the CadenceOS application:
 | `SERVICE_API_KEY` | ≥32 chars, generated separately — not a copy of the JWT secret. |
 | `PORTAL_JWT_ISSUER` / `PORTAL_JWT_AUDIENCE` | Must match what the WP mu-plugin mints. |
 | `MATERIALIZE_HORIZON` | Optional; defaults to 3. |
-| `POSTMARK_API_KEY`, `NOTIFICATION_FROM_ADDRESS`, `NOTIFICATION_SUPPORT_CONTACT` | Only if `cmd/notify` runs here. |
+| `POSTMARK_API_KEY`, `NOTIFICATION_FROM_ADDRESS`, `NOTIFICATION_SUPPORT_CONTACT` | Required — the notification dispatch task runs in this application. See [`SCHEDULED_JOBS.md`](SCHEDULED_JOBS.md). |
 
 ### BUILD_SHA is a gate, not a label
 
@@ -105,7 +105,10 @@ available.
    `migrate` pre-deployment command.
 3. Add the required reviewer on the `production` Environment — this is the
    business-approval gate and nothing else enforces it.
-4. Create the nightly scheduled task ([`SCHEDULED_JOBS.md`](SCHEDULED_JOBS.md)).
+4. Create **both** scheduled tasks — the nightly pair and notification dispatch
+   ([`SCHEDULED_JOBS.md`](SCHEDULED_JOBS.md)). They have different cadences and
+   different environments; creating only the first leaves every confirmation email
+   unsent, with nothing erroring.
 5. Run `deploy.yml` against staging and confirm the health check passes on the SHA you
    deployed, not merely that it returned 200.
 6. Write the first `releases/` record ([`RELEASE_METADATA.md`](RELEASE_METADATA.md)).

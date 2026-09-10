@@ -26,7 +26,14 @@ schedule stuck paused past its date — shows up weeks after the cause.
 So the check that matters is not "did tonight's run succeed" but "has a run happened at
 all recently." See [Verifying](#verifying) below.
 
-## What the script does
+Dispatch fails differently but just as quietly. Nothing errors when `notify` is not
+running: transitions still succeed, events are still appended, and the outbox simply
+accumulates. The customer sees a schedule that paused without ever telling them, which
+is the one outcome spec §7 is written to prevent — it calls these sends the confirmation
+*and the reversal path*. The symptom surfaces as a support conversation, not as a log
+line, so it also needs a query rather than a green run.
+
+## What the nightly script does
 
 `scripts/nightly.sh` runs `sweep`, then `materialize`, and **runs both even if the
 first fails**, exiting non-zero if either did.
@@ -104,9 +111,17 @@ that is fine, since notify only ever sends for events already committed to
 The task inherits the application's environment, so `DATABASE_URL` needs no separate
 configuration and the production credential never leaves Coolify's network.
 
-**On the schedule:** `0 10 * * *` is 10:00 UTC. The cron runs in UTC, so the hour is
-chosen to be outside US business hours year-round *and* to keep a wide margin from
-local midnight in the US zones, which is the part that actually matters.
+Running every five minutes is safe without any coordination between runs.
+`ClaimNotifiableEvents` claims in a single statement whose CTE uses
+`FOR UPDATE ... SKIP LOCKED`, and whose candidate predicate excludes rows whose
+`last_attempt_at` falls inside the 15-minute visibility timeout. A run still working
+when the next tick fires has its in-flight rows skipped, not re-sent. `cmd/notify` also
+carries a 10-minute internal timeout, so a slow run can overlap the following two ticks
+without incident.
+
+**On the nightly schedule:** `0 10 * * *` is 10:00 UTC. The cron runs in UTC, so the
+hour is chosen to be outside US business hours year-round *and* to keep a wide margin
+from local midnight in the US zones, which is the part that actually matters.
 
 An hour sitting on a local date boundary makes the run's own date ambiguous: a little
 clock skew, a slow container start, or a DST shift moves it across midnight and the
@@ -120,6 +135,9 @@ in summer and 23:00 PST *the previous day* in winter. Do not use it.
 The jobs' own date arithmetic is separate from this: each schedule's dates are computed
 in the customer's own timezone (`Service.today`), not the scheduler's. The hour above
 is about the run being unambiguous, not about the cadence math.
+
+The five-minute dispatch cadence needs no equivalent reasoning: it is a polling
+interval, not a date boundary, and it computes nothing from the hour it runs at.
 
 Anything other than the frequency belongs in this repository rather than in the Coolify
 UI. If the sweep/materialize pair needs to change, change `scripts/nightly.sh`; if
