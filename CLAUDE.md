@@ -49,9 +49,16 @@ email), `make nightly` (sweep then materialize, exactly as the scheduler runs th
 
 The nightly pair runs in production as a Coolify scheduled task invoking
 `scripts/nightly.sh`. It takes `DATABASE_URL` and nothing else -- do not give a
-scheduled job the auth secrets, which only `cmd/cadenceos` uses. See
-[`docs/SCHEDULED_JOBS.md`](docs/SCHEDULED_JOBS.md) and
-[`docs/adr/0011`](docs/adr/0011-coolify-scheduled-tasks-for-nightly-jobs.md).
+scheduled job the auth secrets, which only `cmd/cadenceos` uses.
+
+`notify` is a **second, separate** task running every five minutes. It is not in
+`nightly.sh` because spec §7 requires its emails to be immediate, and because it needs
+the three Postmark variables that `sweep` and `materialize` never present. The rule
+above is about presenting credentials, not secrecy: notify should hold its Postmark key
+precisely because it presents it. See
+[`docs/SCHEDULED_JOBS.md`](docs/SCHEDULED_JOBS.md),
+[`docs/adr/0011`](docs/adr/0011-coolify-scheduled-tasks-for-nightly-jobs.md) and
+[`docs/adr/0012`](docs/adr/0012-notification-dispatch-on-its-own-schedule.md).
 
 ## Layout
 

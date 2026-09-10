@@ -1,16 +1,25 @@
 # Scheduled jobs
 
-Two passes move schedules forward every night with no customer action. Both run from
-one script, `scripts/nightly.sh`, invoked by a Coolify scheduled task in staging and
-production. The reasoning behind that choice — and the two options rejected — is
+Three jobs run on a schedule, as **two** Coolify tasks with different cadences and
+different environments.
+
+| Job | Task | Cadence | What it does | Spec |
+| --- | --- | --- | --- | --- |
+| `sweep` | nightly | daily | Ends timed pauses that have come due, re-anchoring the schedule to today | §6 resume |
+| `materialize` | nightly | daily | Tops the planned-occurrence horizon back up for every active schedule | §5 step 1 |
+| `notify` | notification dispatch | every 5 min | Sends the outstanding transactional email sitting in the outbox | §7 |
+
+The two nightly passes move schedules forward with no customer action, and run from one
+script, `scripts/nightly.sh`. `notify` is deliberately **not** in that script: spec §7
+requires its emails to be immediate, and it needs Postmark credentials the other two
+never present. [ADR 0012](adr/0012-notification-dispatch-on-its-own-schedule.md) records
+that decision and the alternatives rejected.
+
+The reasoning for using Coolify tasks at all — and the two options rejected there — is
 [ADR 0011](adr/0011-coolify-scheduled-tasks-for-nightly-jobs.md).
 
-| Job | What it does | Spec |
-| --- | --- | --- |
-| `sweep` | Ends timed pauses that have come due, re-anchoring the schedule to today | §6 resume |
-| `materialize` | Tops the planned-occurrence horizon back up for every active schedule | §5 step 1 |
-
-Neither places an order. Arm, Execute and Reconcile (spec §5 steps 2–4) are Phase 2.
+None of the three places an order. Arm, Execute and Reconcile (spec §5 steps 2–4) are
+Phase 2.
 
 ## Why this matters
 
@@ -22,7 +31,14 @@ schedule stuck paused past its date — shows up weeks after the cause.
 So the check that matters is not "did tonight's run succeed" but "has a run happened at
 all recently." See [Verifying](#verifying) below.
 
-## What the script does
+Dispatch fails differently but just as quietly. Nothing errors when `notify` is not
+running: transitions still succeed, events are still appended, and the outbox simply
+accumulates. The customer sees a schedule that paused without ever telling them, which
+is the one outcome spec §7 is written to prevent — it calls these sends the confirmation
+*and the reversal path*. The symptom surfaces as a support conversation, not as a log
+line, so it also needs a query rather than a green run.
+
+## What the nightly script does
 
 `scripts/nightly.sh` runs `sweep`, then `materialize`, and **runs both even if the
 first fails**, exiting non-zero if either did.
@@ -44,17 +60,29 @@ produce a second charge.
 
 ## Environment
 
-`DATABASE_URL` — and nothing else.
+The two tasks need different variables, and the difference is the reason they are two
+tasks.
 
-Neither job authenticates a caller, so neither takes `PORTAL_JWT_SECRET` or
-`SERVICE_API_KEY`; `config.Load` no longer demands them and `config.RequireAuth` is
-called only by `cmd/cadenceos`. **Do not add them to the scheduled task.** A job that
-holds a credential it never presents is a standing credential in one more place for no
-benefit.
+**Nightly pair** — `DATABASE_URL`, and nothing else.
+
+**Notification dispatch** — `DATABASE_URL` plus `POSTMARK_API_KEY`,
+`NOTIFICATION_FROM_ADDRESS` and `NOTIFICATION_SUPPORT_CONTACT`. `cmd/notify` validates
+all three itself through `config.RequireNotifications` and exits non-zero if any is
+missing, so a misconfigured task fails loudly instead of running and sending nothing.
+
+No job authenticates a caller, so **none of them takes `PORTAL_JWT_SECRET` or
+`SERVICE_API_KEY`**; `config.RequireAuth` is called only by `cmd/cadenceos`. Do not add
+them to either scheduled task. A job that holds a credential it never presents is a
+standing credential in one more place for no benefit.
+
+That rule is about presenting credentials, not about secrecy, which is what separates
+the two cases: notify presents its Postmark key to Postmark, so it should hold it —
+while `sweep` and `materialize` present it to nobody, which is exactly why notify does
+not belong in `scripts/nightly.sh`.
 
 ## Coolify configuration
 
-Create a scheduled task on the CadenceOS application, per environment:
+Create **two** scheduled tasks on the CadenceOS application, per environment.
 
 | Field | Value |
 | --- | --- |
@@ -63,12 +91,34 @@ Create a scheduled task on the CadenceOS application, per environment:
 | Frequency | `0 10 * * *` |
 | Container | the CadenceOS app container |
 
-The task inherits the application's environment, so `DATABASE_URL` needs no separate
-configuration and the production credential never leaves Coolify's network.
+| Field | Value |
+| --- | --- |
+| Name | `notify` |
+| Command | `notify` |
+| Frequency | `*/5 * * * *` |
+| Container | the CadenceOS app container |
 
-**On the schedule:** `0 10 * * *` is 10:00 UTC. The cron runs in UTC, so the hour is
-chosen to be outside US business hours year-round *and* to keep a wide margin from
-local midnight in the US zones, which is the part that actually matters.
+Both tasks inherit the application's environment, so `DATABASE_URL` and the Postmark
+variables need no separate configuration and the production credentials never leave
+Coolify's network.
+
+`notify` is the bare binary name rather than a script path: the `Dockerfile` builds
+`./cmd/...` — every command, not only the service — and copies the output to
+`/usr/local/bin/`, so it is already on `PATH` in the deployed image. It needs no wrapper
+because it is one job; `nightly.sh` exists to sequence two and to continue past a
+failure in the first.
+
+Running every five minutes is safe without any coordination between runs.
+`ClaimNotifiableEvents` claims in a single statement whose CTE uses
+`FOR UPDATE ... SKIP LOCKED`, and whose candidate predicate excludes rows whose
+`last_attempt_at` falls inside the 15-minute visibility timeout. A run still working
+when the next tick fires has its in-flight rows skipped, not re-sent. `cmd/notify` also
+carries a 10-minute internal timeout, so a slow run can overlap the following two ticks
+without incident.
+
+**On the nightly schedule:** `0 10 * * *` is 10:00 UTC. The cron runs in UTC, so the
+hour is chosen to be outside US business hours year-round *and* to keep a wide margin
+from local midnight in the US zones, which is the part that actually matters.
 
 An hour sitting on a local date boundary makes the run's own date ambiguous: a little
 clock skew, a slow container start, or a DST shift moves it across midnight and the
@@ -83,8 +133,12 @@ The jobs' own date arithmetic is separate from this: each schedule's dates are c
 in the customer's own timezone (`Service.today`), not the scheduler's. The hour above
 is about the run being unambiguous, not about the cadence math.
 
+The five-minute dispatch cadence needs no equivalent reasoning: it is a polling
+interval, not a date boundary, and it computes nothing from the hour it runs at.
+
 Anything other than the frequency belongs in this repository rather than in the Coolify
-UI. If the two passes need to change, change `scripts/nightly.sh`.
+UI. If the nightly passes need to change, change `scripts/nightly.sh`; if dispatch
+behaviour needs to change, change `cmd/notify` or `internal/notify`.
 
 ## Verifying
 
@@ -136,13 +190,56 @@ WHERE status = 'paused' AND paused_until < current_date;
 
 Also empty when the sweep is running.
 
+### Notification dispatch
+
+Run it by hand first, the same way. With `DATABASE_URL` and the three Postmark
+variables set:
+
+```
+make notify
+```
+
+Expected output:
+
+```
+{"level":"INFO","msg":"notification dispatch complete","claimed":2,"sent":2,"skipped":0,"send_failed":0}
+```
+
+Run it a second time immediately. `claimed: 0` is correct, not a failure — it is the
+claim predicate refusing to re-send what the first run already delivered, and it is the
+property the five-minute cadence depends on.
+
+To confirm the deployed task has been running, look for events whose email never went
+out:
+
+```sql
+SELECT count(*) FROM schedule_events e
+LEFT JOIN notification_log n ON n.schedule_event_id = e.id
+WHERE e.event_type IN ('schedule.created', 'schedule.paused',
+                       'schedule.resumed', 'schedule.canceled')
+  AND (n.id IS NULL OR n.status = 'pending')
+  AND e.created_at < now() - interval '1 hour';
+```
+
+Zero is the healthy state. Any row is an event the customer was never told about. The
+one-hour grace keeps a five-minute cadence, a retry, and the 15-minute visibility
+timeout from producing false alarms; a row older than that is not in flight.
+
+Rows with `n.status = 'failed'` are a different problem — those were attempted and gave
+up after `maxAttempts`, usually a bad address rather than a missing scheduler:
+
+```sql
+SELECT n.schedule_event_id, n.attempts, n.last_error, n.last_attempt_at
+FROM notification_log n WHERE n.status = 'failed' ORDER BY n.last_attempt_at DESC;
+```
+
 ## Alerting
 
 **Not yet built.** Coolify records each task's exit status in its own history, but
-nothing pages on a failure, so a nightly job that has been failing for a week is
-currently as quiet as one that was never scheduled. ADR 0011 accepts this as a known
-cost of not using a CI-hosted cron; the queries above are the manual stand-in until
-alerting exists.
+nothing pages on a failure, so a job that has been failing for a week is currently as
+quiet as one that was never scheduled. ADR 0011 accepts this as a known cost of not
+using a CI-hosted cron, and ADR 0012 notes that a second task doubles the exposure. The
+queries above are the manual stand-in until alerting exists.
 
 ## Running one job alone
 
@@ -152,6 +249,7 @@ investigating one of them:
 ```
 make sweep         # end timed pauses only
 make materialize   # top up the horizon only
+make notify        # send outstanding transactional email only
 ```
 
 `cmd/materialize` also takes `-today YYYY-MM-DD` to run as if it were another date,
