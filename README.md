@@ -65,6 +65,13 @@ make migrate   # apply migrations
 make run       # start the service on :8080
 ```
 
+Open `http://localhost:8080/console/` for the dependency-free development console.
+It exercises schedule creation, customer list/detail reads, every lifecycle action,
+and the occurrence timeline against the same API used by WooCommerce. Enter a portal
+JWT and its customer ID under **API connection**; add the service key when testing
+schedule creation. Credentials are kept in browser session storage and are cleared
+when that browser tab is closed.
+
 ```sh
 make lint      # gofmt, go vet, staticcheck
 make test      # go test -race ./... (requires a running database)
