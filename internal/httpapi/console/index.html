@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Development console for exercising the CadenceOS schedule API.">
   <title>CadenceOS Console</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23a85e35'/%3E%3Cpath d='M22 10.8a8 8 0 1 0 0 10.4' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/console/styles.css">
 </head>
 <body>
@@ -26,7 +27,7 @@
       <div class="sidebar-title"><span class="eyebrow">Workspace</span><h2>Schedules</h2></div>
       <div class="sidebar-heading">
         <div><span class="eyebrow">Customer</span><strong id="customer-label">Not set</strong></div>
-        <button class="icon-button" id="refresh-button" type="button" aria-label="Refresh schedules" title="Refresh schedules">↻</button>
+        <button class="icon-button" id="refresh-button" type="button" aria-label="Refresh schedules" title="Refresh schedules"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 5v4h4M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg></button>
       </div>
       <div id="schedule-list" class="schedule-list" aria-live="polite"></div>
       <button class="button primary create-button" id="create-button" type="button">Create test schedule</button>
@@ -42,12 +43,12 @@
     <form method="dialog" class="dialog-shell" id="dialog-form">
       <div class="dialog-header">
         <div><span class="eyebrow" id="dialog-eyebrow">Schedule action</span><h2 id="dialog-title"></h2></div>
-        <button class="icon-button" value="cancel" aria-label="Close dialog">×</button>
+        <button class="icon-button" value="cancel" formnovalidate aria-label="Close dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
       </div>
       <div id="dialog-body" class="dialog-body"></div>
       <div id="dialog-error" class="message error" hidden role="alert"></div>
       <div class="dialog-actions">
-        <button class="button secondary" value="cancel">Cancel</button>
+        <button class="button secondary" value="cancel" formnovalidate>Cancel</button>
         <button class="button primary" id="dialog-submit" value="default">Continue</button>
       </div>
     </form>

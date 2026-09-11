@@ -45,3 +45,18 @@ func TestConsoleHandler(t *testing.T) {
 		})
 	}
 }
+
+func TestConsoleDialogDismissControlsBypassValidation(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodGet, "/console/", nil)
+	rr := httptest.NewRecorder()
+	httpapi.NewConsoleHandler().ServeHTTP(rr, req)
+
+	// Both the header close control and footer cancel control live inside a form with
+	// required fields. Without formnovalidate, native validation traps the user in the
+	// dialog before the submit handler can honor value="cancel".
+	if got := strings.Count(rr.Body.String(), "formnovalidate"); got != 2 {
+		t.Fatalf("formnovalidate count = %d, want 2", got)
+	}
+}
