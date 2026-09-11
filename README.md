@@ -114,7 +114,7 @@ Inherited from the Project Helix template and kept deliberately:
 | --- | --- |
 | `lint` / `test` / `build` / `security-check` | Real commands against the Go stack |
 | Health checks | Functional — probe asserts on the deployed commit SHA |
-| Deploy steps | Real — they post the Coolify webhook. **Never yet run:** see below |
+| Deploy steps | Real — staging posts a webhook; production pins and deploys an exact SHA through the Coolify API. **Never yet run:** see below |
 | Rollback | **Manual, no workflow.** See below |
 | Peer approval (`CODEOWNERS`) | **Not operational.** See below |
 | Required status checks | **Not configured.** See below |
@@ -122,7 +122,9 @@ Inherited from the Project Helix template and kept deliberately:
 Four gates are incomplete, and each is a decision rather than an oversight:
 
 - **The deploy steps are real, but nothing has been deployed yet.**
-  `staging-deploy.yml` and `production-deploy.yml` post the Coolify deploy webhook;
+  `staging-deploy.yml` posts the Coolify deploy webhook, while
+  `production-deploy.yml` pins `git_commit_sha` and queues that exact revision through
+  the Coolify API;
   the SHA-validation and approval-match guards around them are functional and must be
   kept. What is still missing is outside this repository: the `staging` and
   `production` GitHub Environments, their secrets, and the Coolify application
@@ -131,11 +133,9 @@ Four gates are incomplete, and each is a decision rather than an oversight:
   [issue #40](https://github.com/EPW80/replenishment-system/issues/40); the checklist
   is in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 - **There is no rollback workflow; recovery is manual.** `rollback.yml` was a stub and
-  was deleted rather than wired up, because the deploy webhook takes no commit SHA — it
-  builds whatever the tracked branch points at, so firing it for a rollback would
-  rebuild the broken release and report success. A workflow that pretends to roll back
-  is worse than none, because people plan around it. Deploying a per-commit registry
-  image tag is what would make this automatable. See
+  was deleted rather than wired up. Production can now pin a known-good commit through
+  the Coolify API, but rollback still needs a human to assess migration compatibility
+  and select the release. See
   [`docs/LIFECYCLE.md` §12](docs/LIFECYCLE.md#12-rollback).
 - **`CODEOWNERS.example` has not been renamed to `.github/CODEOWNERS`.** GitHub
   silently ignores rules naming a team without write access, which would produce a
