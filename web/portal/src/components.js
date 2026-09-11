@@ -136,11 +136,7 @@ export function chip({ label, selected = false, onClick }) {
 }
 
 /* ---------------------------------------------------------------------------
- * Card and sheet
- *
- * The inset panel is the one component in components.md this screen has no use
- * for -- it carries consequence copy inside the cadence, skip and cancel sheets.
- * It arrives with those screens rather than sitting here unused.
+ * Card, sheet and inset panel
  * ------------------------------------------------------------------------ */
 
 export function card(children, { className = '' } = {}) {
@@ -149,6 +145,12 @@ export function card(children, { className = '' } = {}) {
 
 export function section(children, { className = '' } = {}) {
   return el('div', { className: `cad-section ${className}`.trim() }, children);
+}
+
+/** Carries consequence copy inside a sheet: the cadence preview, the skip nudge, the
+ *  cancel deflection. */
+export function inset(children, { className = '' } = {}) {
+  return el('div', { className: `cad-inset ${className}`.trim() }, children);
 }
 
 /* ---------------------------------------------------------------------------
@@ -165,6 +167,114 @@ export function field({ label, value, placeholder = false, accent = false, extra
     el('div', { className: 'cad-field__label', textContent: label }),
     el('div', { className: classes.join(' ') }, [value, extra]),
   ]);
+}
+
+/* ---------------------------------------------------------------------------
+ * Radio option row
+ *
+ * The whole row is the hit target, not just the control (components.md). Built as a
+ * real radio group rather than styled divs: arrow-key navigation, Home/End, and the
+ * one-tab-stop-per-group behaviour are what a native group already does, and
+ * components.md requires the arrow keys explicitly. The native input stays in the DOM
+ * and drives `:checked`, so the label element is the hit target for free.
+ * ------------------------------------------------------------------------ */
+
+/** `options` are `{ value, label, helper, trailing }`. `trailing` is a node parked at
+ *  the end of the row -- the pause sheet's date field lives there. */
+export function radioGroup({ name, options, value, onChange, className = '' }) {
+  const rows = options.map((option) => {
+    const input = el('input', {
+      className: 'cad-radio__input',
+      type: 'radio',
+      name,
+      value: option.value,
+      checked: option.value === value,
+      onchange: () => onChange(option.value),
+    });
+
+    return el('label', { className: `cad-radio ${option.className ?? ''}`.trim() }, [
+      input,
+      el('span', { className: 'cad-radio__mark', attrs: { 'aria-hidden': 'true' } }),
+      el('span', { className: 'cad-radio__text' }, [
+        el('span', { className: 'cad-radio__label', textContent: option.label }),
+        option.helper && el('span', { className: 'cad-radio__helper', textContent: option.helper }),
+      ]),
+      option.trailing,
+    ]);
+  });
+
+  return el(
+    'div',
+    { className: `cad-radios ${className}`.trim(), attrs: { role: 'radiogroup' } },
+    rows,
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * Stepper
+ * ------------------------------------------------------------------------ */
+
+/** Clamps to the action's bounds rather than letting the field reach a value the
+ *  server will refuse (components.md). Returns `{ node, set }` so a sheet can push a
+ *  value in when a preset chip is chosen. */
+export function stepper({ value, min, max, unit, label, onChange }) {
+  const clamp = (n) => Math.min(max, Math.max(min, n));
+
+  const field = el('input', {
+    className: 'cad-stepper__value',
+    type: 'text',
+    inputMode: 'numeric',
+    value: String(value),
+    attrs: { 'aria-label': label },
+  });
+
+  const commit = (next) => {
+    const clamped = clamp(Number.isFinite(next) ? Math.round(next) : min);
+    field.value = String(clamped);
+    onChange(clamped);
+  };
+
+  field.addEventListener('input', () => {
+    // Let the field hold a partial value while typing; clamp on the way out, so
+    // someone typing "4" on the way to "42" is not yanked to the minimum mid-keystroke.
+    const parsed = Number.parseInt(field.value, 10);
+    if (Number.isFinite(parsed) && parsed >= min && parsed <= max) onChange(parsed);
+  });
+  field.addEventListener('blur', () => commit(Number.parseInt(field.value, 10)));
+  field.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      commit(Number.parseInt(field.value, 10) + 1);
+    } else if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      commit(Number.parseInt(field.value, 10) - 1);
+    }
+  });
+
+  const nudge = (delta, ariaLabel) =>
+    el('button', {
+      className: 'cad-stepper__nudge',
+      type: 'button',
+      textContent: delta > 0 ? '▲' : '▼',
+      attrs: { 'aria-label': ariaLabel },
+      onclick: () => commit(Number.parseInt(field.value, 10) + delta),
+    });
+
+  const node = el('div', { className: 'cad-stepper' }, [
+    field,
+    el('span', { className: 'cad-stepper__unit', textContent: unit }),
+    el('span', { className: 'cad-stepper__nudges' }, [
+      nudge(1, `Increase ${label}`),
+      nudge(-1, `Decrease ${label}`),
+    ]),
+  ]);
+
+  return {
+    node,
+    set(next) {
+      field.value = String(clamp(next));
+    },
+  };
 }
 
 /* ---------------------------------------------------------------------------

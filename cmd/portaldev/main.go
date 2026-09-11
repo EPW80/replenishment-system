@@ -72,7 +72,7 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/api/", http.StripPrefix("/api", proxy(target, minter)))
+	mux.Handle("/api/", http.StripPrefix("/api", proxy(target, "http://"+*addr, minter)))
 	mux.Handle("/", widget(*dir, *schedule))
 
 	srv := &http.Server{
@@ -129,7 +129,35 @@ func (m *minter) token() (string, error) {
 	}).SignedString(m.secret)
 }
 
-func proxy(target *url.URL, m *minter) http.Handler {
+// allowed decides whether a request may carry a minted customer credential upstream.
+//
+// The hazard this guards is real and was demonstrated on PR #61: the proxy attaches a
+// valid credential to whatever it forwards, and the upstream does not inspect
+// Content-Type (internal/httpapi.decode), so a POST with a text/plain body is a
+// CORS-simple request. Any page a developer has open could send one cross-origin, with
+// no preflight to stop it, and cancel a real schedule. The attacker cannot read the
+// reply, but the write has already happened.
+//
+// Reads are unrestricted. A write must carry an Origin header exactly matching this
+// server's own, which a browser sets on every cross-origin POST and cannot be forged by
+// page script. The header is required rather than merely checked when present: the
+// cross-origin form always sends one, so a missing Origin has nothing legitimate to be
+// in this context and allowing it would reopen the hole for any client that omits it.
+func allowed(r *http.Request, origin string) error {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		return nil
+	}
+	switch r.Header.Get("Origin") {
+	case origin:
+		return nil
+	case "":
+		return errors.New("portaldev requires an Origin header on writes")
+	default:
+		return errors.New("portaldev rejects cross-origin writes")
+	}
+}
+
+func proxy(target *url.URL, origin string, m *minter) http.Handler {
 	rp := &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(target)
@@ -142,21 +170,8 @@ func proxy(target *url.URL, m *minter) http.Handler {
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Reads only.
-		//
-		// This proxy attaches a valid customer credential to whatever it forwards, and
-		// the upstream does not check Content-Type (internal/httpapi.decode), so a POST
-		// with a text/plain body is a CORS-simple request: any page the developer has
-		// open could send one cross-origin, with no preflight to stop it, and skip,
-		// defer or cancel a real schedule. The browser could not read the reply, but
-		// the write would already have happened.
-		//
-		// The portal is read-only at this step, so the method allowlist closes that
-		// hole completely. When the transition screens need POST, this needs a real
-		// CSRF defence -- an Origin check against the listen address, at least -- not
-		// a wider allowlist.
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			http.Error(w, `{"error":"portaldev proxies reads only"}`, http.StatusMethodNotAllowed)
+		if err := allowed(r, origin); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusForbidden)
 			return
 		}
 

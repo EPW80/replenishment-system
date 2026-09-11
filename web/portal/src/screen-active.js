@@ -41,6 +41,11 @@ import {
   formatShort,
 } from './dates.js';
 import { occurrenceStatus, scheduleStatus, splitOccurrences } from './status.js';
+import { openCadenceSheet, openDeferSheet } from './sheet-cadence.js';
+import { openPauseSheet, resumeSchedule } from './sheet-pause.js';
+import { openCancelSheet } from './sheet-cancel.js';
+import { openSkipSheet } from './sheet-skip.js';
+import { changeCadence } from './transitions.js';
 
 export function mountActiveSchedule(root, config) {
   const { scheduleID } = config;
@@ -66,8 +71,10 @@ export function mountActiveSchedule(root, config) {
     return reauth;
   }
 
+  // Reads `screenConfig`, which is built below; nothing paints until load() runs at the
+  // end of this function, by which point it exists.
   function paint() {
-    root.replaceChildren(view(state, config, { onRetry: load }));
+    root.replaceChildren(view(state, screenConfig, { onRetry: load }));
   }
 
   async function fetchHalf(key, fn, retried = false) {
@@ -97,8 +104,89 @@ export function mountActiveSchedule(root, config) {
     fetchHalf('occurrences', () => getOccurrences(scheduleID));
   }
 
+  /*
+   * After a transition lands, the returned schedule is authoritative and goes straight
+   * on screen -- the header updates with no round trip, and nothing is optimistically
+   * patched.
+   *
+   * The occurrence list is a different matter: it is not in that response, and most of
+   * these transitions rewrite it. A pause cancels every unexecuted occurrence, a cadence
+   * change re-anchors and rewrites them, skip and defer move them. So the queue is
+   * re-fetched rather than reasoned about, which also picks up whatever the service did
+   * that the client did not predict.
+   */
+  function applyTransition(schedule) {
+    state.schedule = { phase: 'ready', data: schedule };
+    paint();
+    fetchHalf('occurrences', () => getOccurrences(scheduleID));
+  }
+
+  // The portal implements the transitions itself now, so the host no longer supplies
+  // handlers for them -- only the URLs it alone knows (payment, orders) and the token
+  // exchange. `screenConfig` is what the view renders from.
+  const screenConfig = {
+    ...config,
+    ...transitionActions({
+      schedule: () => (state.schedule.phase === 'ready' ? state.schedule.data : null),
+      occurrences: () => (state.occurrences.phase === 'ready' ? state.occurrences.data : []),
+      applyTransition,
+    }),
+  };
+
   load();
   return { reload: load };
+}
+
+/** Builds the five handlers the screen's controls call, each opening its sheet against
+ *  the data as it stands at the moment of the click. */
+function transitionActions({ schedule, occurrences, applyTransition }) {
+  const open = (fn) => () => {
+    const current = schedule();
+    if (current) fn(current);
+  };
+
+  const changeInterval = (preset) => {
+    const current = schedule();
+    if (!current) return;
+    if (typeof preset === 'number') {
+      changeCadence(current.id, preset).then(applyTransition);
+      return;
+    }
+    openCadenceSheet({ schedule: current, occurrences: occurrences(), onDone: applyTransition });
+  };
+
+  const pauseNow = open((current) =>
+    openPauseSheet({ schedule: current, onDone: applyTransition }),
+  );
+
+  return {
+    onChangeInterval: changeInterval,
+    onPause: pauseNow,
+    onResume: open((current) => resumeSchedule(current).then(applyTransition)),
+    onDefer: open((current) =>
+      openDeferSheet({ schedule: current, occurrences: occurrences(), onDone: applyTransition }),
+    ),
+    onSkip: (occ) => {
+      const current = schedule();
+      if (!current) return;
+      const { upcoming } = splitOccurrences(occurrences());
+      const index = upcoming.findIndex((o) => o.sequence_no === occ.sequence_no);
+      openSkipSheet({
+        schedule: current,
+        target: occ,
+        following: index >= 0 ? upcoming[index + 1] : undefined,
+        onDone: applyTransition,
+      });
+    },
+    onCancel: open((current) =>
+      openCancelSheet({
+        schedule: current,
+        onDone: applyTransition,
+        onChangeInterval: changeInterval,
+        onPause: pauseNow,
+      }),
+    ),
+  };
 }
 
 /* ---------------------------------------------------------------------------
@@ -110,16 +198,20 @@ function view(state, config, handlers) {
     masthead(config),
     scheduleCard(state.schedule, config, handlers),
     queueCard(state, config, handlers),
-    footer(config),
+    footer(config, state.schedule.phase === 'ready' ? state.schedule.data : null),
   ]);
 }
 
-/** "Cancel recurring orders" is screen 5's entry point and renders only when the host
- *  wires it, for the same reason the row actions do. */
-function footer({ supportEmail = '[support email]', onCancel }) {
+/** "Cancel recurring orders" is screen 5's entry point. It is withheld once the
+ *  schedule is already canceled -- cancel is the one transition a canceled schedule
+ *  still exposes a route to, and taking it can only produce "this schedule has already
+ *  been canceled". Same rule as the manage column: do not offer a control whose only
+ *  possible outcome is a rejection. */
+function footer({ supportEmail = '[support email]', onCancel }, schedule) {
+  const cancellable = onCancel && schedule?.status !== 'canceled';
   return el('div', { className: 'cad-footer' }, [
     el('span', { textContent: `Questions? Contact ${supportEmail}.` }),
-    onCancel &&
+    cancellable &&
       el('a', {
         className: 'cad-link',
         textContent: 'Cancel recurring orders',
@@ -181,7 +273,7 @@ function scheduleCard(half, config, handlers) {
           ]),
           nextOrderBlock(schedule),
         ]),
-        manageColumn(config),
+        manageColumn(schedule, config),
       ],
       { className: 'cad-section--header' },
     ),
@@ -253,14 +345,28 @@ function pausedSubtitle(schedule) {
   return `Resuming ${formatMedium(schedule.paused_until)}`;
 }
 
-function manageColumn(config) {
-  const controls = [
-    config.onChangeInterval &&
+/* Which controls make sense depends on the status, and the domain's preconditions are
+ * the authority on that (internal/domain/transitions.go): pause needs an active
+ * schedule, resume needs a paused one, cadence accepts active or paused, and a canceled
+ * schedule accepts nothing at all. Offering a control the service is certain to reject
+ * with a 409 is not a safe default -- it is a button that exists only to fail. */
+function manageColumn(schedule, config) {
+  if (schedule.status === 'canceled') return null;
+
+  const controls = [];
+  if (schedule.status === 'active' || schedule.status === 'paused') {
+    controls.push(
       button({ label: 'Change interval', icon: 'rotate', onClick: config.onChangeInterval }),
-    config.onPause && button({ label: 'Pause', icon: 'pause', onClick: config.onPause }),
-  ].filter(Boolean);
-  if (controls.length === 0) return null;
-  return el('div', { className: 'cad-manage' }, controls);
+    );
+  }
+  if (schedule.status === 'active') {
+    controls.push(button({ label: 'Pause', icon: 'pause', onClick: config.onPause }));
+  }
+  if (schedule.status === 'paused') {
+    controls.push(button({ label: 'Resume now', variant: 'primary', onClick: config.onResume }));
+  }
+
+  return controls.length > 0 ? el('div', { className: 'cad-manage' }, controls) : null;
 }
 
 function factsGrid(schedule, config) {

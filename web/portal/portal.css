@@ -378,6 +378,9 @@
   cursor: pointer;
 }
 
+.cad-chip:focus-visible { outline: 2px solid var(--cad-accent); outline-offset: 2px; }
+.cad-chip:hover[aria-pressed='false'] { border-color: var(--cad-ink-faint); }
+
 .cad-chip__check { width: 14px; height: 14px; flex-shrink: 0; visibility: hidden; }
 
 .cad-chip[aria-pressed='true'] {
@@ -387,6 +390,177 @@
 }
 
 .cad-chip[aria-pressed='true'] .cad-chip__check { visibility: visible; }
+
+/* ---------------------------------------------------------------------------
+ * Inset panel
+ * ------------------------------------------------------------------------ */
+
+.cad-inset {
+  padding: var(--cad-pad-inset);
+  background: var(--cad-surface-sunk);
+  border: 1px solid var(--cad-border-hairline);
+  border-radius: var(--cad-radius-control);
+}
+
+/* ---------------------------------------------------------------------------
+ * Radio option row
+ *
+ * The label is the row, so the whole 48px-minimum block is the hit target.
+ * ------------------------------------------------------------------------ */
+
+.cad-radios { display: flex; flex-direction: column; gap: var(--cad-gap); }
+
+.cad-radio {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 48px;
+  padding: 12px 15px;
+  border: 1px solid var(--cad-border);
+  border-radius: var(--cad-radius-control);
+  background: var(--cad-surface);
+  cursor: pointer;
+}
+
+/* Visually hidden, but still focusable and still driving :checked. */
+.cad-radio__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cad-radio__mark {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  border: 1px solid var(--cad-border-strong);
+  border-radius: var(--cad-radius-pill);
+  background: var(--cad-surface);
+}
+
+.cad-radio__text { display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0; }
+.cad-radio__label { font-size: var(--cad-body-sm); }
+.cad-radio__helper { font-size: var(--cad-meta); color: var(--cad-ink-muted); }
+
+.cad-radio:has(.cad-radio__input:checked) {
+  background: var(--cad-accent-tint);
+  border-color: var(--cad-accent);
+}
+
+.cad-radio:has(.cad-radio__input:checked) .cad-radio__label { font-weight: 600; }
+
+/* The 5px ring is what reads as selected without relying on the tint alone. */
+.cad-radio__input:checked + .cad-radio__mark {
+  border: 5px solid var(--cad-accent);
+  background: var(--cad-surface);
+}
+
+.cad-radio:has(.cad-radio__input:focus-visible) {
+  outline: 2px solid var(--cad-accent);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Stepper
+ * ------------------------------------------------------------------------ */
+
+.cad-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cad-gap-tight);
+  height: var(--cad-control);
+  padding: 0 6px 0 14px;
+  border: 1px solid var(--cad-border-strong);
+  border-radius: var(--cad-radius-control);
+  background: var(--cad-surface);
+}
+
+.cad-stepper__value {
+  width: 3.5ch;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--cad-ink);
+  font-family: var(--cad-font-mono);
+  font-size: var(--cad-body-sm);
+  text-align: right;
+}
+
+.cad-stepper__value:focus-visible { outline: 2px solid var(--cad-accent); outline-offset: 2px; }
+.cad-stepper__unit { font-size: var(--cad-body-sm); color: var(--cad-ink-muted); flex-grow: 1; }
+.cad-stepper__nudges { display: flex; flex-direction: column; gap: 2px; }
+
+.cad-stepper__nudge {
+  width: 26px;
+  height: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--cad-border);
+  border-radius: 3px;
+  background: var(--cad-surface-row);
+  color: var(--cad-ink-muted);
+  font-size: 8px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cad-stepper__nudge:hover { border-color: var(--cad-ink-faint); }
+.cad-stepper__nudge:focus-visible { outline: 2px solid var(--cad-accent); outline-offset: 1px; }
+
+/* ---------------------------------------------------------------------------
+ * Sheet (native dialog)
+ *
+ * A dialog renders in the top layer, so the host theme's stacking contexts and
+ * overflow cannot clip it -- the failure mode an embedded widget cannot test for.
+ * ------------------------------------------------------------------------ */
+
+.cad-sheet {
+  width: min(620px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  padding: 0;
+  border: 1px solid var(--cad-border);
+  border-radius: var(--cad-radius-card);
+  background: var(--cad-surface);
+  color: var(--cad-ink);
+  font-family: var(--cad-font-sans);
+  font-size: var(--cad-body);
+  line-height: var(--cad-line-body);
+  overflow: auto;
+}
+
+.cad-sheet::backdrop { background: rgb(31 28 23 / 38%); }
+
+.cad-sheet__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cad-pad-card);
+  padding: 26px var(--cad-pad-sheet);
+}
+
+.cad-sheet__head { display: flex; flex-direction: column; gap: 6px; }
+.cad-sheet__title { margin: 0; font-family: var(--cad-font-serif); font-size: var(--cad-title); font-weight: 500; }
+.cad-sheet__text { margin: 0; font-size: var(--cad-body-sm); color: var(--cad-ink-muted); }
+
+.cad-sheet__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--cad-gap);
+  padding-top: var(--cad-pad-card);
+  border-top: 1px solid var(--cad-border-hairline);
+}
+
+/* The error sits with the controls that caused it, not at the top of the sheet. */
+.cad-sheet__error {
+  flex-grow: 1;
+  font-size: var(--cad-meta);
+  color: var(--cad-crit-text);
+}
+
+.cad-sheet__spacer { flex-grow: 1; }
 
 /* ---------------------------------------------------------------------------
  * Field
@@ -596,6 +770,66 @@
 }
 
 /* ---------------------------------------------------------------------------
+ * Sheet contents: chip rows, the cadence preview, inline value rows
+ * ------------------------------------------------------------------------ */
+
+.cad-chiprow { display: flex; flex-wrap: wrap; gap: var(--cad-gap); }
+
+.cad-custom { display: flex; align-items: center; gap: 12px; }
+.cad-custom__label { font-size: var(--cad-body-sm); color: var(--cad-ink-muted); }
+
+.cad-preview { display: flex; flex-direction: column; gap: 12px; }
+
+.cad-preview__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.cad-preview__col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cad-preview__label { font-size: var(--cad-meta); color: var(--cad-ink-muted); }
+.cad-preview__col--after .cad-preview__label { color: var(--cad-accent-strong); }
+
+.cad-preview__dates {
+  font-size: var(--cad-body-sm);
+  color: var(--cad-ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.cad-preview__col--after .cad-preview__dates { color: var(--cad-ink); font-weight: 600; }
+.cad-preview__note { font-size: var(--cad-meta); color: var(--cad-ink-muted); }
+
+.cad-inline { display: flex; align-items: center; flex-wrap: wrap; gap: var(--cad-gap); }
+.cad-inline__label { font-size: var(--cad-body-sm); color: var(--cad-ink-muted); }
+.cad-inline__value { font-size: var(--cad-body-sm); font-weight: 600; }
+
+.cad-note--hairline { padding-top: var(--cad-gap-row); border-top: 1px solid var(--cad-border-hairline); }
+
+.cad-deflect__heading { font-size: var(--cad-body-sm); font-weight: 600; }
+
+.cad-datefield {
+  height: var(--cad-control);
+  padding: 0 14px;
+  flex-shrink: 0;
+  border: 1px solid var(--cad-accent-edge);
+  border-radius: var(--cad-radius-control);
+  background: var(--cad-surface);
+  color: var(--cad-ink);
+  font-family: var(--cad-font-mono);
+  font-size: var(--cad-body-sm);
+}
+
+.cad-datefield:focus-visible { outline: 2px solid var(--cad-accent); outline-offset: 2px; }
+
+/* The reason grid is two-up with "Something else" spanning both. */
+.cad-radios--grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.cad-radios--grid .cad-radio--wide { grid-column: span 2; }
+
+/* ---------------------------------------------------------------------------
  * Empty state
  * ------------------------------------------------------------------------ */
 
@@ -679,6 +913,15 @@
 
   /* A label and its caption do not fit side by side at this width. */
   .cad-section-head { flex-direction: column; align-items: flex-start; gap: 4px; }
+
+  /* Sheets: one column throughout, and controls at the phone height. */
+  .cad-preview__grid { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .cad-radios--grid { grid-template-columns: minmax(0, 1fr); }
+  .cad-radios--grid .cad-radio--wide { grid-column: auto; }
+  .cad-radio { min-height: var(--cad-control-mobile); }
+  .cad-sheet__actions { flex-wrap: wrap; }
+  .cad-sheet__actions .cad-btn { flex: 1; height: var(--cad-control-mobile); }
+  .cad-sheet__error { flex-basis: 100%; }
 
   /* One column: the row's parts stack, actions go full width beneath. */
   .cad-occ { flex-wrap: wrap; gap: 10px 12px; }
