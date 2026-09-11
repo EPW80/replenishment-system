@@ -230,6 +230,9 @@ func TestCreateScheduleValidation(t *testing.T) {
 		{"malformed anchor_date", func(m map[string]any) { m["anchor_date"] = "01/01/2026" }},
 		{"missing timezone", func(m map[string]any) { delete(m, "timezone") }},
 		{"invalid timezone", func(m map[string]any) { m["timezone"] = "Mars/Olympus_Mons" }},
+		{"discount below zero", func(m map[string]any) { m["discount_pct"] = -0.01 }},
+		{"discount above one hundred", func(m map[string]any) { m["discount_pct"] = 100.01 }},
+		{"discount with excess precision", func(m map[string]any) { m["discount_pct"] = 10.999 }},
 		{"no items", func(m map[string]any) { m["items"] = []map[string]any{} }},
 		{"zero quantity", func(m map[string]any) {
 			m["items"] = []map[string]any{{"sku": "S", "quantity": 0}}
@@ -251,6 +254,32 @@ func TestCreateScheduleValidation(t *testing.T) {
 	}
 }
 
+func TestCreateSchedulePreservesTwoDecimalDiscount(t *testing.T) {
+	h, _, _ := newAPI(t)
+	body := `{"customer_id":"cust_discount","customer_email":"cust_discount@example.com",
+		"origin_order_id":"order_` + uuid.NewString() + `","interval_days":30,
+		"anchor_date":"2026-01-01","timezone":"UTC","discount_pct":10.25,
+		"items":[{"sku":"SKU-001","quantity":1}]}`
+
+	created := do(t, h, http.MethodPost, "/schedules", body, serviceCred())
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", created.Code, created.Body.String())
+	}
+	var first map[string]any
+	_ = json.Unmarshal(created.Body.Bytes(), &first)
+
+	id := first["id"].(string)
+	fetched := do(t, h, http.MethodGet, "/schedules/"+id, "", customerCred(t, "cust_discount"))
+	if fetched.Code != http.StatusOK {
+		t.Fatalf("get status = %d, body = %s", fetched.Code, fetched.Body.String())
+	}
+	var second map[string]any
+	_ = json.Unmarshal(fetched.Body.Bytes(), &second)
+	if first["discount_pct"] != second["discount_pct"] || second["discount_pct"] != 10.25 {
+		t.Fatalf("discount changed across persistence: create=%v get=%v", first["discount_pct"], second["discount_pct"])
+	}
+}
+
 // An unknown field is rejected rather than silently ignored -- a client sending
 // doses_per_day should get an error, not have it quietly dropped.
 func TestCreateScheduleRejectsUnknownFields(t *testing.T) {
@@ -265,6 +294,21 @@ func TestCreateScheduleRejectsUnknownFields(t *testing.T) {
 	rec := do(t, h, http.MethodPost, "/schedules", body, serviceCred())
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400 — unknown fields must be rejected", rec.Code)
+	}
+}
+
+func TestCreateScheduleRejectsTrailingJSONDocument(t *testing.T) {
+	h, _, _ := newAPI(t)
+
+	body := `{
+		"customer_id":"cust_trailing","customer_email":"cust_trailing@example.com",
+		"origin_order_id":"order_` + uuid.NewString() + `","interval_days":30,
+		"anchor_date":"2026-01-01","timezone":"UTC",
+		"items":[{"sku":"SKU-001","quantity":1}]
+	} {"unexpected":true}`
+	rec := do(t, h, http.MethodPost, "/schedules", body, serviceCred())
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for a second JSON document (body: %s)", rec.Code, rec.Body.String())
 	}
 }
 

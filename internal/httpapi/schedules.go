@@ -95,9 +95,7 @@ func scopeFor(r *http.Request) (store.Scope, bool) {
 // two live in different route groups.
 func (h ScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req createScheduleRequest
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
@@ -135,6 +133,11 @@ func (h ScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "at least one item is required")
 		return
 	}
+	discountPct, err := domain.NormalizeDiscountPct(req.DiscountPct)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	s := domain.Schedule{
 		ID:                uuid.NewString(),
@@ -147,7 +150,7 @@ func (h ScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Timezone:          req.Timezone,
 		PaymentTokenRef:   req.PaymentTokenRef,
 		ShippingAddressID: req.ShippingAddressID,
-		DiscountPct:       req.DiscountPct,
+		DiscountPct:       discountPct,
 	}
 
 	items := make([]domain.ScheduleItem, 0, len(req.Items))
