@@ -25,6 +25,7 @@ import {
   el,
   field,
   itemRow,
+  linkButton,
   occurrenceRow,
   pill,
   section,
@@ -51,24 +52,35 @@ export function mountActiveSchedule(root, config) {
     occurrences: { phase: 'loading' },
   };
 
-  let reauthenticated = false;
+  // Both halves are in flight at once, so an expired token 401s both. They share one
+  // exchange, single-flighted here, and each retries at most once.
+  //
+  // The guard has to be per-half, not shared: a shared "already tried" flag would send
+  // whichever half lost the race straight to an error state, and the exchange that just
+  // succeeded would only ever retry the half that started it -- half a portal, from a
+  // refresh that worked.
+  let reauth = null;
+
+  function reauthenticate() {
+    reauth ??= Promise.resolve(config.onReauthenticate());
+    return reauth;
+  }
 
   function paint() {
     root.replaceChildren(view(state, config, { onRetry: load }));
   }
 
-  async function fetchHalf(key, fn) {
+  async function fetchHalf(key, fn, retried = false) {
     state[key] = { phase: 'loading' };
     try {
       state[key] = { phase: 'ready', data: await fn() };
     } catch (err) {
       // A 401 means the portal's JWT expired. Re-run the host's token exchange rather
       // than showing an error, and only surface one if that also fails (components.md).
-      if (err instanceof ApiError && err.status === 401 && config.onReauthenticate && !reauthenticated) {
-        reauthenticated = true;
+      if (err instanceof ApiError && err.status === 401 && config.onReauthenticate && !retried) {
         try {
-          await config.onReauthenticate();
-          return fetchHalf(key, fn);
+          await reauthenticate();
+          return fetchHalf(key, fn, true);
         } catch {
           /* fall through to the error state */
         }
@@ -79,7 +91,7 @@ export function mountActiveSchedule(root, config) {
   }
 
   function load() {
-    reauthenticated = false;
+    reauth = null;
     paint();
     fetchHalf('schedule', () => getSchedule(scheduleID));
     fetchHalf('occurrences', () => getOccurrences(scheduleID));
@@ -97,7 +109,7 @@ function view(state, config, handlers) {
   return el('div', { className: 'cad-page' }, [
     masthead(config),
     scheduleCard(state.schedule, config, handlers),
-    queueCard(state, config),
+    queueCard(state, config, handlers),
     footer(config),
   ]);
 }
@@ -156,8 +168,8 @@ function scheduleCard(half, config, handlers) {
       band({
         variant: 'crit',
         heading: 'We could not charge your card',
-        action: config.onUpdatePayment
-          ? button({ label: 'Update card and restart', onClick: config.onUpdatePayment })
+        action: config.paymentURL
+          ? linkButton({ label: 'Update card and restart', href: config.paymentURL })
           : null,
       }),
     section(
@@ -309,7 +321,7 @@ function itemsBlock(schedule) {
  * Queue card
  * ------------------------------------------------------------------------ */
 
-function queueCard(state, config) {
+function queueCard(state, config, handlers) {
   const scheduleHalf = state.schedule;
   const half = state.occurrences;
 
@@ -349,8 +361,11 @@ function queueCard(state, config) {
   if (scheduleHalf.phase === 'error') {
     return card([head]);
   }
+  // The queue can fail on its own while the schedule renders fine. Without its own
+  // retry the customer's only way out is a full reload, so it gets the same band and
+  // affordance the schedule error gets rather than a line of grey text.
   if (half.phase === 'error') {
-    return card([head, section([el('div', { className: 'cad-empty', textContent: half.error.message })])]);
+    return card([errorBand(half.error, handlers.onRetry, 'We could not load your orders'), head]);
   }
 
   const schedule = scheduleHalf.data;
@@ -373,7 +388,7 @@ function queueCard(state, config) {
       section(
         [
           el('div', { className: 'cad-field__label', textContent: 'Already sent' }),
-          el('div', { className: 'cad-queue' }, sent.map((occ) => sentRow(occ))),
+          el('div', { className: 'cad-queue' }, sent.map((occ) => sentRow(occ, config))),
         ],
         { className: 'cad-section--settled' },
       ),
@@ -408,15 +423,41 @@ function upcomingRow(occ, schedule, config) {
   });
 }
 
-function sentRow(occ) {
+/* screens.md's status table gives already-sent rows two actions: a placed row links to
+ * its order_id in WooCommerce, and a failed row offers payment recovery. Both need
+ * something only the host knows -- the store's order URL, and where payment details are
+ * managed -- so both render when it supplies them and degrade to plain text when it
+ * does not. A failed occurrence under a still-active schedule is the case that needs
+ * this: the schedule-level band never appears, so without the row action the customer
+ * has no way back. */
+function sentRow(occ, config) {
   const status = occurrenceStatus(occ.status);
+  const actions = [];
+  if (occ.status === 'failed' && config.paymentURL) {
+    actions.push(
+      linkButton({ label: 'Update payment', href: config.paymentURL }),
+    );
+  }
+
   return occurrenceRow({
     sequenceNo: occ.sequence_no,
     date: formatLong(occ.scheduled_for),
     dateNarrow: formatCompact(occ.scheduled_for),
-    meta: occ.order_id ? `Order #${occ.order_id}` : null,
+    meta: orderMeta(occ, config),
     status,
-    actions: [],
+    actions,
+  });
+}
+
+/** The order reference, linked when the host gave a URL template. */
+function orderMeta(occ, config) {
+  if (!occ.order_id) return null;
+  const label = `Order #${occ.order_id}`;
+  if (!config.orderURLTemplate) return label;
+  return el('a', {
+    className: 'cad-link',
+    textContent: label,
+    href: config.orderURLTemplate.replace('{id}', encodeURIComponent(occ.order_id)),
   });
 }
 
@@ -468,10 +509,11 @@ function queueSkeleton() {
   );
 }
 
-function errorBand(error, onRetry) {
+function errorBand(error, onRetry, heading = 'We could not load your schedule') {
   return band({
     variant: 'crit',
-    heading: 'We could not load your schedule',
+    heading,
+    // The API's message verbatim (screens.md); the portal never paraphrases one.
     text: error.message,
     action: button({ label: 'Try again', onClick: onRetry }),
   });

@@ -108,6 +108,14 @@ export function button({
   );
 }
 
+/** A button-shaped link. Navigation belongs in an anchor -- middle-click, open in a
+ *  new tab and the status bar all keep working, which a button with an onclick loses. */
+export function linkButton({ label, href, variant = 'secondary' }) {
+  const classes = ['cad-btn'];
+  if (variant !== 'secondary') classes.push(`cad-btn--${variant}`);
+  return el('a', { className: classes.join(' '), href }, [el('span', { textContent: label })]);
+}
+
 /* ---------------------------------------------------------------------------
  * Choice chip
  * ------------------------------------------------------------------------ */
@@ -192,7 +200,8 @@ export function occurrenceRow({ sequenceNo, date, dateNarrow, meta, status, acti
       }),
       dateNarrow &&
         el('span', { className: 'cad-occ__date cad-narrow-only', textContent: dateNarrow }),
-      meta && el('span', { className: 'cad-occ__meta', textContent: meta }),
+      // `meta` is a string for a countdown and a node when it carries an order link.
+      meta && el('span', { className: 'cad-occ__meta' }, [meta]),
     ]),
     pill(status),
     el('div', { className: 'cad-occ__actions' }, actions),

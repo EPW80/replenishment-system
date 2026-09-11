@@ -46,7 +46,14 @@ export function occurrenceStatus(value) {
 }
 
 /** Splits the full occurrence list into the two rendered sections, dropping the
- *  hidden ones. Upcoming runs earliest-first; already-sent runs most-recent-first. */
+ *  hidden ones. Upcoming runs earliest-first; already-sent runs most-recent-first.
+ *
+ *  Ordered by date, with the sequence number only as a tie-breaker -- the same order
+ *  the service uses in NextActionableOccurrence (`ORDER BY scheduled_for, sequence_no`,
+ *  internal/store/store.go). The two can disagree: deferring an occurrence moves its
+ *  date without renumbering it, so sorting by sequence alone would show a later order
+ *  above an earlier one, and the row the customer reads as "next" would not be the one
+ *  the service acts on next. */
 export function splitOccurrences(occurrences) {
   const upcoming = [];
   const sent = [];
@@ -55,7 +62,9 @@ export function splitOccurrences(occurrences) {
     if (section === 'upcoming') upcoming.push(occ);
     else if (section === 'sent') sent.push(occ);
   }
-  upcoming.sort((a, b) => a.sequence_no - b.sequence_no);
-  sent.sort((a, b) => b.sequence_no - a.sequence_no);
+  const byDate = (a, b) =>
+    a.scheduled_for.localeCompare(b.scheduled_for) || a.sequence_no - b.sequence_no;
+  upcoming.sort(byDate);
+  sent.sort((a, b) => byDate(b, a));
   return { upcoming, sent };
 }

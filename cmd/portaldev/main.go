@@ -29,7 +29,11 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-const tokenTTL = time.Hour
+const (
+	tokenTTL = time.Hour
+	// Matches minSecretLength in internal/config.
+	minSecretLength = 32
+)
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:8081", "loopback address to listen on")
@@ -43,9 +47,12 @@ func main() {
 		log.Fatal("portaldev: -customer and -schedule are both required")
 	}
 
+	// The same floor cadenceos enforces in config.RequireAuth. Accepting a shorter one
+	// here would start cleanly and then have the upstream reject every proxied request
+	// as unauthenticated, which reads as a broken portal rather than a short secret.
 	secret := os.Getenv("PORTAL_JWT_SECRET")
-	if secret == "" {
-		log.Fatal("portaldev: PORTAL_JWT_SECRET is required")
+	if len(secret) < minSecretLength {
+		log.Fatalf("portaldev: PORTAL_JWT_SECRET must be at least %d characters", minSecretLength)
 	}
 
 	if err := requireLoopback(*addr); err != nil {
@@ -135,6 +142,24 @@ func proxy(target *url.URL, m *minter) http.Handler {
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Reads only.
+		//
+		// This proxy attaches a valid customer credential to whatever it forwards, and
+		// the upstream does not check Content-Type (internal/httpapi.decode), so a POST
+		// with a text/plain body is a CORS-simple request: any page the developer has
+		// open could send one cross-origin, with no preflight to stop it, and skip,
+		// defer or cancel a real schedule. The browser could not read the reply, but
+		// the write would already have happened.
+		//
+		// The portal is read-only at this step, so the method allowlist closes that
+		// hole completely. When the transition screens need POST, this needs a real
+		// CSRF defence -- an Origin check against the listen address, at least -- not
+		// a wider allowlist.
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			http.Error(w, `{"error":"portaldev proxies reads only"}`, http.StatusMethodNotAllowed)
+			return
+		}
+
 		token, err := m.token()
 		if err != nil {
 			log.Printf("portaldev: mint token: %v", err)

@@ -24,13 +24,22 @@
   </style>
 </head>
 <body>
+  <!-- data-payment-url and data-order-url stand in for what the theme knows: where a
+       customer manages payment, and what an order links to in WooCommerce. -->
   <div
     class="cad-portal"
     data-cad-portal
     data-schedule-id=""
     data-brand="House of Helix"
-    data-support-email="support@example.com"></div>
+    data-support-email="support@example.com"
+    data-payment-url="/my-account/payment-methods"
+    data-order-url="/my-account/view-order/{id}"></div>
 
+  <script>
+    // The mu-plugin owns the nonce-to-JWT exchange in production. portaldev mints a
+    // token per request and never 401s, so there is nothing to exchange locally.
+    window.cadenceOSPortal = {};
+  </script>
   <script type="module" src="./src/main.js"></script>
   <script>
     // Stands in for the theme knowing which schedule the logged-in customer owns.

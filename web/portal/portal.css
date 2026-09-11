@@ -299,9 +299,11 @@
   font-weight: 600;
   line-height: 1;
   cursor: pointer;
+  /* The same shape is used by linkButton, which renders an anchor. */
+  text-decoration: none;
 }
 
-.cad-btn:hover:not(:disabled) { border-color: var(--cad-ink-faint); }
+.cad-btn:hover:not(:disabled) { border-color: var(--cad-ink-faint); text-decoration: none; }
 
 /* Required, and absent from the artboards -- see components.md. */
 .cad-btn:focus-visible,
@@ -684,6 +686,9 @@
   .cad-occ__actions { min-width: 0; width: 100%; justify-content: stretch; }
   .cad-occ__actions .cad-btn { flex: 1; height: var(--cad-control-mobile); justify-content: center; }
 
+  /* The name stacks under the quantity and SKU; without wrapping on the row itself
+     its 100% basis is inert and it just shrinks. */
+  .cad-item { flex-wrap: wrap; gap: 4px 16px; }
   .cad-item__sku { width: auto; }
   .cad-item__name { flex-basis: 100%; }
 

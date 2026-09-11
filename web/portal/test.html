@@ -120,16 +120,46 @@
 
     /* --- Queue split ------------------------------------------------------- */
     const occurrences = [
-      { sequence_no: 3, status: 'placed' },
-      { sequence_no: 7, status: 'planned' },
-      { sequence_no: 4, status: 'canceled' },
-      { sequence_no: 5, status: 'skipped' },
-      { sequence_no: 6, status: 'pending' },
-      { sequence_no: 2, status: 'failed' },
+      { sequence_no: 3, scheduled_for: '2026-07-24', status: 'placed' },
+      { sequence_no: 7, scheduled_for: '2026-11-13', status: 'planned' },
+      { sequence_no: 4, scheduled_for: '2026-08-21', status: 'canceled' },
+      { sequence_no: 5, scheduled_for: '2026-09-18', status: 'skipped' },
+      { sequence_no: 6, scheduled_for: '2026-10-16', status: 'pending' },
+      { sequence_no: 2, scheduled_for: '2026-06-26', status: 'failed' },
     ];
     const split = splitOccurrences(occurrences);
     check('upcoming is planned + pending, earliest first', split.upcoming.map((o) => o.sequence_no), [6, 7]);
     check('sent is placed/skipped/failed, newest first', split.sent.map((o) => o.sequence_no), [5, 3, 2]);
+
+    // A defer moves scheduled_for without renumbering, so date and sequence disagree.
+    // The service orders actionable occurrences by date (store.go), and the row the
+    // customer reads as "next" has to be the one the service acts on next.
+    const deferred = [
+      { sequence_no: 4, scheduled_for: '2026-11-20', status: 'planned' }, // pushed back
+      { sequence_no: 5, scheduled_for: '2026-10-16', status: 'planned' },
+      { sequence_no: 6, scheduled_for: '2026-11-13', status: 'planned' },
+    ];
+    check(
+      'a deferred occurrence sorts by its new date, not its sequence',
+      splitOccurrences(deferred).upcoming.map((o) => o.sequence_no),
+      [5, 6, 4],
+    );
+    check(
+      'same date falls back to sequence order',
+      splitOccurrences([
+        { sequence_no: 9, scheduled_for: '2026-10-16', status: 'planned' },
+        { sequence_no: 8, scheduled_for: '2026-10-16', status: 'planned' },
+      ]).upcoming.map((o) => o.sequence_no),
+      [8, 9],
+    );
+    check(
+      'already-sent runs most recent first by date',
+      splitOccurrences([
+        { sequence_no: 1, scheduled_for: '2026-07-24', status: 'placed' },
+        { sequence_no: 2, scheduled_for: '2026-08-21', status: 'skipped' },
+      ]).sent.map((o) => o.sequence_no),
+      [2, 1],
+    );
     check('canceled rows are hidden', split.upcoming.concat(split.sent).some((o) => o.status === 'canceled'), false);
     check('empty list splits cleanly', splitOccurrences([]), { upcoming: [], sent: [] });
 
