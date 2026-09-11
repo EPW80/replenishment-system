@@ -1,0 +1,158 @@
+<!doctype html>
+<!--
+  Assertions for the two pure modules, dates.js and status.js.
+
+  There is no JS test runner in this repository and adding one means npm plus workflow
+  changes, which ship separately (CLAUDE.md rule 5). So this page runs the checks in the
+  browser with no toolchain: open it through cmd/portaldev, or any static server, and
+  read the result. CI does not run it -- that gap is real and is tracked rather than
+  papered over.
+
+  What is covered is the part that would fail silently: the timezone day-diff, which is
+  wrong in a way nobody notices until a customer in another timezone sees a date the
+  service disagrees with, and the status split, which decides whether a row appears at
+  all.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Portal module checks</title>
+  <style>
+    body { margin: 0; padding: 24px; font: 14px/1.5 ui-monospace, Menlo, monospace; background: #FAF8F5; color: #1F1C17; }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    #summary { margin: 0 0 18px; font-weight: 600; }
+    .pass { color: #35604A; }
+    .fail { color: #8F3325; }
+    li { margin-bottom: 3px; list-style: none; }
+    ul { padding: 0; margin: 0; }
+    code { background: #F0EDE7; padding: 1px 4px; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <h1>Portal module checks</h1>
+  <p id="summary">Running…</p>
+  <ul id="results"></ul>
+
+  <script type="module">
+    import {
+      chargesPhrase,
+      countdownPhrase,
+      countdownPhraseShort,
+      daysBetween,
+      daysFromToday,
+      formatCompact,
+      formatLong,
+      formatMedium,
+      formatShort,
+      todayIn,
+    } from './src/dates.js';
+    import { occurrenceStatus, scheduleStatus, splitOccurrences } from './src/status.js';
+
+    const results = [];
+    const check = (name, actual, expected) => {
+      const a = JSON.stringify(actual);
+      const e = JSON.stringify(expected);
+      results.push({ name, ok: a === e, actual: a, expected: e });
+    };
+
+    /* --- Calendar dates format as themselves ------------------------------
+     * The bug this guards: new Date('2026-09-18') is UTC midnight, so formatting
+     * it in Los Angeles yields 17 September. A calendar date must never shift.
+     */
+    check('formatLong', formatLong('2026-09-18'), 'Friday, 18 September 2026');
+    check('formatShort', formatShort('2026-09-18'), 'Fri, 18 September');
+    check('formatMedium', formatMedium('2026-05-29'), '29 May 2026');
+    check('formatCompact', formatCompact('2026-09-18'), '18 Sep 2026');
+    check('formatLong across year end', formatLong('2027-01-01'), 'Friday, 1 January 2027');
+
+    /* --- todayIn resolves in the schedule's timezone, not the browser's ---- */
+    // 2026-09-18T03:00Z is still 17 September in Los Angeles and already the 18th in Berlin.
+    const instant = new Date('2026-09-18T03:00:00Z');
+    check('todayIn LA', todayIn('America/Los_Angeles', instant), '2026-09-17');
+    check('todayIn Berlin', todayIn('Europe/Berlin', instant), '2026-09-18');
+    check('todayIn UTC', todayIn('UTC', instant), '2026-09-18');
+
+    /* --- Day arithmetic ---------------------------------------------------- */
+    check('daysBetween', daysBetween('2026-09-06', '2026-09-18'), 12);
+    check('daysBetween backwards', daysBetween('2026-09-18', '2026-09-06'), -12);
+    check('daysBetween same day', daysBetween('2026-09-18', '2026-09-18'), 0);
+    // A DST boundary must not round to 11 or 13 days: parsing at UTC noon is what
+    // keeps a 23-hour day from eating a whole day.
+    check('daysBetween across DST', daysBetween('2026-10-25', '2026-11-06'), 12);
+    check('daysBetween across a leap day', daysBetween('2028-02-27', '2028-03-01'), 3);
+
+    check(
+      'daysFromToday uses the schedule timezone',
+      daysFromToday('2026-09-18', 'America/Los_Angeles', instant),
+      1,
+    );
+    check(
+      'daysFromToday in Berlin sees the same date as today',
+      daysFromToday('2026-09-18', 'Europe/Berlin', instant),
+      0,
+    );
+
+    /* --- Countdown copy ---------------------------------------------------- */
+    const base = new Date('2026-09-06T12:00:00Z');
+    check('countdown many days', countdownPhrase('2026-09-18', 'UTC', base), '12 days from now');
+    check('countdown one day', countdownPhrase('2026-09-07', 'UTC', base), '1 day from now');
+    check('countdown today', countdownPhrase('2026-09-06', 'UTC', base), 'today');
+    check('countdown past is omitted', countdownPhrase('2026-09-05', 'UTC', base), null);
+
+    // The phone artboard says "away" where the wide one says "from now".
+    check('countdown short', countdownPhraseShort('2026-09-18', 'UTC', base), '12 days away');
+    check('countdown short one day', countdownPhraseShort('2026-09-07', 'UTC', base), '1 day away');
+    check('countdown short today', countdownPhraseShort('2026-09-06', 'UTC', base), 'today');
+
+    check('charges many days', chargesPhrase('2026-09-18', 'UTC', base), 'Charges in 12 days');
+    check('charges one day', chargesPhrase('2026-09-07', 'UTC', base), 'Charges in 1 day');
+    check('charges today', chargesPhrase('2026-09-06', 'UTC', base), 'Charges today');
+    check('charges past is omitted', chargesPhrase('2026-09-05', 'UTC', base), null);
+
+    /* --- Status vocabulary ------------------------------------------------- */
+    check('schedule active', scheduleStatus('active').label, 'Active');
+    check('schedule failed reads as recoverable', scheduleStatus('failed').label, 'Needs payment update');
+    check('schedule canceled is localised', scheduleStatus('canceled').label, 'Cancelled');
+    check('occurrence pending', occurrenceStatus('pending').label, 'Charging soon');
+    check('occurrence skipped', occurrenceStatus('skipped').label, 'Skipped by you');
+    check('occurrence failed', occurrenceStatus('failed').label, 'Could not be charged');
+    check('unknown status keeps its raw value', occurrenceStatus('zzz').label, 'zzz');
+
+    /* --- Queue split ------------------------------------------------------- */
+    const occurrences = [
+      { sequence_no: 3, status: 'placed' },
+      { sequence_no: 7, status: 'planned' },
+      { sequence_no: 4, status: 'canceled' },
+      { sequence_no: 5, status: 'skipped' },
+      { sequence_no: 6, status: 'pending' },
+      { sequence_no: 2, status: 'failed' },
+    ];
+    const split = splitOccurrences(occurrences);
+    check('upcoming is planned + pending, earliest first', split.upcoming.map((o) => o.sequence_no), [6, 7]);
+    check('sent is placed/skipped/failed, newest first', split.sent.map((o) => o.sequence_no), [5, 3, 2]);
+    check('canceled rows are hidden', split.upcoming.concat(split.sent).some((o) => o.status === 'canceled'), false);
+    check('empty list splits cleanly', splitOccurrences([]), { upcoming: [], sent: [] });
+
+    /* --- Report ------------------------------------------------------------ */
+    const failed = results.filter((r) => !r.ok);
+    const list = document.getElementById('results');
+    for (const r of results) {
+      const li = document.createElement('li');
+      li.className = r.ok ? 'pass' : 'fail';
+      li.textContent = r.ok
+        ? `PASS  ${r.name}`
+        : `FAIL  ${r.name} — expected ${r.expected}, got ${r.actual}`;
+      list.append(li);
+    }
+    const summary = document.getElementById('summary');
+    summary.className = failed.length === 0 ? 'pass' : 'fail';
+    summary.textContent =
+      failed.length === 0
+        ? `All ${results.length} checks passed.`
+        : `${failed.length} of ${results.length} checks FAILED.`;
+    // Read by the Playwright pass during verification.
+    document.title = failed.length === 0 ? 'checks: pass' : 'checks: fail';
+    window.__checks = { total: results.length, failed: failed.length, results };
+  </script>
+</body>
+</html>

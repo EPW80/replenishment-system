@@ -1,0 +1,691 @@
+/*
+ * CadenceOS portal — tokens and components.
+ *
+ * The tokens are docs/portal-ui/tokens.css, declared on the widget root instead of
+ * :root. That file's scope note is the reason: the portal lands inside the WordPress
+ * theme's stylesheet (spec §4), and a widget that inherits font-family and color from
+ * whatever surrounds it is the documented failure mode. Everything below is scoped
+ * under .cad-portal for the same reason -- no bare element selectors escape into the
+ * host page.
+ *
+ * Width is handled with container queries, not viewport media queries. An embedded
+ * widget does not know the viewport; it knows how much room the theme gave it. This is
+ * what screens.md means by treating 390px as "the narrow bound to design against, not
+ * as a breakpoint to hardcode".
+ */
+
+.cad-portal {
+  /* ---- Surfaces ------------------------------------------------------------ */
+  --cad-ground:        #FAF8F5;
+  --cad-surface:       #FFFFFF;
+  --cad-surface-sunk:  #F6F3EE;
+  --cad-surface-row:   #FBF9F6;
+  --cad-surface-rail:  #F3EFE9;
+
+  /* ---- Borders ------------------------------------------------------------- */
+  --cad-border:          #E4DED4;
+  --cad-border-strong:   #D3CABB;
+  --cad-border-hairline: #EFEAE2;
+
+  /* ---- Ink ----------------------------------------------------------------- */
+  --cad-ink:       #1F1C17;
+  --cad-ink-muted: #5F584C;
+  --cad-ink-faint: #8B8375;
+  --cad-ink-ghost: #A9A093;
+
+  /* ---- Accent -------------------------------------------------------------- */
+  --cad-accent:        #9C5B36;
+  --cad-accent-strong: #7E4829;
+  --cad-accent-tint:   #F6EDE6;
+  --cad-accent-edge:   #C7A98D;
+
+  /* ---- Status -------------------------------------------------------------- */
+  --cad-ok:        #3F6B4F;  --cad-ok-text:   #35604A;  --cad-ok-tint:   #EBF1EC;
+  --cad-warn:      #8A6A21;  --cad-warn-text: #6B5216;  --cad-warn-tint: #F7F0DE;
+  --cad-warn-edge: #E4CF9E;  --cad-warn-band: #FBF3E2;
+  --cad-crit:      #A33B2B;  --cad-crit-text: #8F3325;  --cad-crit-tint: #F9EAE7;
+  --cad-crit-edge: #E0B3AA;  --cad-crit-band: #FAEDEA;
+  --cad-idle:      #8B8375;  --cad-idle-text: #57503F;  --cad-idle-tint: #F0EDE7;
+
+  /* ---- Type ---------------------------------------------------------------- */
+  --cad-font-serif: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --cad-font-sans:  'Public Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --cad-font-mono:  'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --cad-display:   30px;
+  --cad-title:     22px;
+  --cad-subtitle:  18px;
+  --cad-body:      15px;
+  --cad-body-sm:   14px;
+  --cad-table:   13.5px;
+  --cad-meta:      13px;
+  --cad-label:     11px;
+
+  --cad-eyebrow-tracking: 0.08em;
+  --cad-line-body: 1.55;
+
+  /* ---- Shape --------------------------------------------------------------- */
+  --cad-radius-card:    6px;
+  --cad-radius-control: 4px;
+  --cad-radius-pill:    999px;
+  --cad-radius-bar:     4px;
+
+  /* ---- Controls ------------------------------------------------------------ */
+  --cad-control:        44px;
+  --cad-control-mobile: 48px;
+  --cad-control-row:    36px;
+  --cad-control-admin:  36px;
+  --cad-control-nav:    38px;
+
+  /* ---- Spacing ------------------------------------------------------------- */
+  --cad-gap-tight:  8px;
+  --cad-gap:       10px;
+  --cad-gap-row:   14px;
+  --cad-pad-inset: 18px;
+  --cad-pad-card:  22px;
+  --cad-pad-sheet: 28px;
+  --cad-pad-page:  44px;
+  --cad-pad-phone: 18px;
+
+  container-type: inline-size;
+  container-name: cadportal;
+
+  /* Set explicitly rather than inherited -- see the file header. */
+  font-family: var(--cad-font-sans);
+  font-size: var(--cad-body);
+  line-height: var(--cad-line-body);
+  color: var(--cad-ink);
+  background: var(--cad-ground);
+  -webkit-font-smoothing: antialiased;
+  text-size-adjust: 100%;
+}
+
+.cad-portal *,
+.cad-portal *::before,
+.cad-portal *::after {
+  box-sizing: border-box;
+}
+
+/* ---------------------------------------------------------------------------
+ * Layout
+ * ------------------------------------------------------------------------ */
+
+/* The portal artboards are 880px wide (artboards/canvas.json), so the content stops
+ * there and centres in whatever column the theme gives it. The container query still
+ * measures the widget root, so a wide theme column keeps the wide layout. */
+.cad-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 880px;
+  margin-inline: auto;
+  padding: 40px var(--cad-pad-page) 48px;
+}
+
+.cad-masthead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cad-gap-tight);
+}
+
+.cad-eyebrow {
+  font-size: var(--cad-label);
+  font-weight: 600;
+  letter-spacing: var(--cad-eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--cad-ink-faint);
+}
+
+.cad-h1 {
+  margin: 0;
+  font-family: var(--cad-font-serif);
+  font-size: 34px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+.cad-h2 {
+  margin: 0;
+  font-family: var(--cad-font-serif);
+  font-size: 21px;
+  font-weight: 500;
+}
+
+.cad-intro {
+  margin: 0;
+  max-width: 60ch;
+  font-size: var(--cad-body);
+  line-height: var(--cad-line-body);
+  color: var(--cad-ink-muted);
+  text-wrap: pretty;
+}
+
+.cad-caption {
+  font-size: 12px;
+  color: var(--cad-ink-faint);
+}
+
+.cad-note {
+  margin: 0;
+  font-size: var(--cad-meta);
+  color: var(--cad-ink-muted);
+}
+
+.cad-mono {
+  font-family: var(--cad-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--cad-ink-faint);
+}
+
+.cad-link {
+  color: var(--cad-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.cad-link:hover { color: var(--cad-accent-strong); text-decoration: underline; }
+.cad-link--sm { font-size: var(--cad-meta); }
+
+.cad-stack { display: flex; flex-direction: column; gap: var(--cad-gap-row); }
+
+/* ---------------------------------------------------------------------------
+ * Card and sheet
+ *
+ * Sections are separated by a full-bleed rule, not by margin (components.md).
+ * ------------------------------------------------------------------------ */
+
+.cad-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--cad-surface);
+  border: 1px solid var(--cad-border);
+  border-radius: var(--cad-radius-card);
+}
+
+.cad-section {
+  padding: var(--cad-pad-card) var(--cad-pad-sheet);
+}
+
+.cad-section + .cad-section { border-top: 1px solid var(--cad-border); }
+
+.cad-section--header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cad-pad-sheet);
+  padding: 26px var(--cad-pad-sheet);
+}
+
+.cad-section--settled {
+  background: var(--cad-surface-row);
+  border-bottom-left-radius: var(--cad-radius-card);
+  border-bottom-right-radius: var(--cad-radius-card);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cad-section--head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 16px;
+}
+
+.cad-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Status pill
+ *
+ * The dot is redundant with the label on purpose: color never carries state
+ * alone (components.md).
+ * ------------------------------------------------------------------------ */
+
+.cad-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 11px;
+  border-radius: var(--cad-radius-pill);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.cad-pill__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--cad-radius-pill);
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.cad-pill--ok   { background: var(--cad-ok-tint);   color: var(--cad-ok-text); }
+.cad-pill--warn { background: var(--cad-warn-tint); color: var(--cad-warn-text); }
+.cad-pill--crit { background: var(--cad-crit-tint); color: var(--cad-crit-text); }
+.cad-pill--idle { background: var(--cad-idle-tint); color: var(--cad-idle-text); }
+
+.cad-pill--ok .cad-pill__dot   { background: var(--cad-ok); }
+.cad-pill--warn .cad-pill__dot { background: var(--cad-warn); }
+.cad-pill--crit .cad-pill__dot { background: var(--cad-crit); }
+.cad-pill--idle .cad-pill__dot { background: var(--cad-idle); }
+
+.cad-pill__icon { width: 12px; height: 12px; flex-shrink: 0; }
+
+/* ---------------------------------------------------------------------------
+ * Button
+ * ------------------------------------------------------------------------ */
+
+.cad-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cad-gap-tight);
+  height: var(--cad-control);
+  padding: 0 18px;
+  border: 1px solid var(--cad-border-strong);
+  border-radius: var(--cad-radius-control);
+  background: var(--cad-surface);
+  color: var(--cad-ink);
+  font-family: inherit;
+  font-size: var(--cad-body-sm);
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cad-btn:hover:not(:disabled) { border-color: var(--cad-ink-faint); }
+
+/* Required, and absent from the artboards -- see components.md. */
+.cad-btn:focus-visible,
+.cad-portal a:focus-visible,
+.cad-portal [tabindex]:focus-visible {
+  outline: 2px solid var(--cad-accent);
+  outline-offset: 2px;
+}
+
+.cad-btn--primary {
+  background: var(--cad-accent);
+  border-color: var(--cad-accent);
+  color: #FFFFFF;
+}
+
+.cad-btn--primary:hover:not(:disabled) {
+  background: var(--cad-accent-strong);
+  border-color: var(--cad-accent-strong);
+}
+
+.cad-btn--danger {
+  background: var(--cad-crit);
+  border-color: var(--cad-crit);
+  color: #FFFFFF;
+}
+
+.cad-btn--row {
+  height: var(--cad-control-row);
+  padding: 0 14px;
+  font-size: var(--cad-meta);
+}
+
+.cad-btn:disabled {
+  background: var(--cad-surface-sunk);
+  color: var(--cad-ink-ghost);
+  cursor: default;
+}
+
+.cad-btn__icon { width: 16px; height: 16px; flex-shrink: 0; }
+
+/* Pending keeps the label so the control does not change width. */
+.cad-btn__spinner {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: var(--cad-radius-pill);
+  opacity: 0.7;
+  animation: cad-spin 0.7s linear infinite;
+}
+
+@keyframes cad-spin { to { transform: rotate(360deg); } }
+
+/* ---------------------------------------------------------------------------
+ * Choice chip
+ * ------------------------------------------------------------------------ */
+
+.cad-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--cad-control);
+  padding: 0 16px;
+  border: 1px solid var(--cad-border-strong);
+  border-radius: var(--cad-radius-pill);
+  background: var(--cad-surface);
+  color: var(--cad-ink);
+  font-family: inherit;
+  font-size: var(--cad-body-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cad-chip__check { width: 14px; height: 14px; flex-shrink: 0; visibility: hidden; }
+
+.cad-chip[aria-pressed='true'] {
+  background: var(--cad-accent-tint);
+  border-color: var(--cad-accent);
+  color: var(--cad-accent-strong);
+}
+
+.cad-chip[aria-pressed='true'] .cad-chip__check { visibility: visible; }
+
+/* ---------------------------------------------------------------------------
+ * Field
+ * ------------------------------------------------------------------------ */
+
+.cad-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--cad-pad-card) var(--cad-pad-sheet);
+}
+
+.cad-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cad-field__label {
+  font-size: var(--cad-label);
+  font-weight: 600;
+  letter-spacing: var(--cad-eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--cad-ink-faint);
+}
+
+.cad-field__value {
+  display: flex;
+  align-items: baseline;
+  gap: var(--cad-gap-tight);
+  font-size: var(--cad-body);
+  overflow-wrap: anywhere;
+}
+
+/* An unresolved value reads as pending rather than as content. */
+.cad-field__value--placeholder { color: var(--cad-ink-muted); }
+.cad-field__value--accent { color: var(--cad-accent); font-weight: 600; }
+
+/* ---------------------------------------------------------------------------
+ * Headline block (the one number per card)
+ * ------------------------------------------------------------------------ */
+
+.cad-headline {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cad-headline--main { flex-grow: 1; gap: 12px; min-width: 0; }
+
+.cad-next { display: flex; flex-direction: column; gap: 4px; }
+
+/* One headline spelling per width. Both are in the DOM; the container query picks. */
+.cad-narrow-only { display: none; }
+
+.cad-headline__date {
+  font-family: var(--cad-font-serif);
+  font-size: var(--cad-display);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.cad-headline__sub {
+  font-size: var(--cad-body-sm);
+  color: var(--cad-ink-muted);
+}
+
+.cad-status-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cad-manage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cad-gap);
+  flex-shrink: 0;
+  width: 188px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Item row
+ * ------------------------------------------------------------------------ */
+
+.cad-items { display: flex; flex-direction: column; gap: 2px; }
+
+.cad-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 11px 0;
+  border-top: 1px solid var(--cad-border-hairline);
+}
+
+.cad-items .cad-item:last-child { border-bottom: 1px solid var(--cad-border-hairline); }
+
+.cad-item__qty {
+  width: 34px;
+  flex-shrink: 0;
+  font-size: var(--cad-body);
+  font-weight: 600;
+  color: var(--cad-ink-muted);
+}
+
+.cad-item__sku {
+  width: 128px;
+  flex-shrink: 0;
+  font-family: var(--cad-font-mono);
+  font-size: var(--cad-meta);
+  color: var(--cad-ink);
+}
+
+.cad-item__name {
+  flex-grow: 1;
+  font-size: var(--cad-body);
+  color: var(--cad-ink-muted);
+}
+
+/* ---------------------------------------------------------------------------
+ * Occurrence row
+ *
+ * The action column keeps its width on rows with no actions, so the pills stay
+ * on one vertical line down the list (components.md).
+ * ------------------------------------------------------------------------ */
+
+.cad-queue { display: flex; flex-direction: column; }
+
+.cad-occ {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 16px 0;
+  border-top: 1px solid var(--cad-border-hairline);
+}
+
+.cad-occ__seq {
+  width: 30px;
+  flex-shrink: 0;
+  font-family: var(--cad-font-mono);
+  font-size: var(--cad-meta);
+  color: var(--cad-ink-ghost);
+}
+
+.cad-occ__when {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cad-occ__when--skel { gap: var(--cad-gap-tight); }
+
+.cad-occ__date { font-size: var(--cad-body); font-weight: 600; }
+.cad-occ__meta { font-size: var(--cad-meta); color: var(--cad-ink-faint); }
+
+.cad-occ__actions {
+  display: flex;
+  gap: var(--cad-gap-tight);
+  flex-shrink: 0;
+  min-width: 172px;
+  justify-content: flex-end;
+}
+
+/* ---------------------------------------------------------------------------
+ * Notice band
+ * ------------------------------------------------------------------------ */
+
+.cad-band {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px var(--cad-pad-sheet);
+  border-bottom: 1px solid transparent;
+}
+
+.cad-band__icon { width: 20px; height: 20px; flex-shrink: 0; margin-top: 1px; }
+.cad-band__body { flex-grow: 1; display: flex; flex-direction: column; gap: 3px; }
+.cad-band__heading { font-size: var(--cad-body-sm); font-weight: 600; }
+.cad-band__text { font-size: var(--cad-meta); }
+.cad-band__actions { flex-shrink: 0; }
+
+.cad-band--warn {
+  background: var(--cad-warn-band);
+  border-bottom-color: var(--cad-warn-edge);
+  color: var(--cad-warn-text);
+}
+
+.cad-band--crit {
+  background: var(--cad-crit-band);
+  border-bottom-color: var(--cad-crit-edge);
+  color: var(--cad-crit-text);
+}
+
+.cad-band--warn .cad-btn,
+.cad-band--crit .cad-btn { background: var(--cad-surface); }
+.cad-band--warn .cad-btn { border-color: var(--cad-warn-edge); }
+.cad-band--crit .cad-btn { border-color: var(--cad-crit-edge); }
+
+/* Radius follows the band's position in the card. */
+.cad-card > .cad-band:first-child {
+  border-top-left-radius: var(--cad-radius-card);
+  border-top-right-radius: var(--cad-radius-card);
+}
+
+/* ---------------------------------------------------------------------------
+ * Empty state
+ * ------------------------------------------------------------------------ */
+
+.cad-empty {
+  padding: 26px 0 8px;
+  font-size: var(--cad-body-sm);
+  color: var(--cad-ink-muted);
+}
+
+/* ---------------------------------------------------------------------------
+ * Loading skeleton
+ *
+ * Skeletons the real structure rather than showing a spinner over an empty
+ * page (components.md).
+ * ------------------------------------------------------------------------ */
+
+.cad-skel {
+  background: var(--cad-surface-sunk);
+  border-radius: var(--cad-radius-control);
+  animation: cad-pulse 1.4s ease-in-out infinite;
+}
+
+.cad-skel--line { height: 12px; }
+.cad-skel--title { height: 30px; max-width: 380px; }
+.cad-skel--pill { height: 22px; width: 82px; border-radius: var(--cad-radius-pill); }
+
+@keyframes cad-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cad-portal *,
+  .cad-portal *::before,
+  .cad-portal *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Footer
+ * ------------------------------------------------------------------------ */
+
+.cad-footer {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: var(--cad-meta);
+  color: var(--cad-ink-muted);
+}
+
+/* ---------------------------------------------------------------------------
+ * Narrow layout -- screen 6
+ *
+ * Keyed to the widget's own width, so the theme's breakpoint decides when this
+ * applies. 390px is the narrow bound the phone screen was drawn against.
+ * ------------------------------------------------------------------------ */
+
+@container cadportal (max-width: 560px) {
+  .cad-page { padding: 24px var(--cad-pad-phone) 32px; gap: 18px; }
+
+  .cad-wide-only { display: none; }
+  .cad-narrow-only { display: block; }
+
+  .cad-h1 { font-size: 27px; }
+  .cad-h2 { font-size: var(--cad-subtitle); }
+  .cad-headline__date { font-size: 23px; }
+
+  .cad-section { padding: 18px var(--cad-pad-phone); }
+  .cad-section--header { flex-direction: column; gap: 16px; padding: 20px var(--cad-pad-phone); }
+  .cad-band { padding: 14px var(--cad-pad-phone); }
+
+  /* Manage actions become a list rather than a button row (screens.md §6). */
+  .cad-manage { width: 100%; }
+  .cad-manage .cad-btn { width: 100%; height: var(--cad-control-mobile); justify-content: flex-start; }
+
+  .cad-fields { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+
+  /* A label and its caption do not fit side by side at this width. */
+  .cad-section-head { flex-direction: column; align-items: flex-start; gap: 4px; }
+
+  /* One column: the row's parts stack, actions go full width beneath. */
+  .cad-occ { flex-wrap: wrap; gap: 10px 12px; }
+  .cad-occ__when { flex-basis: 0; min-width: 140px; }
+  .cad-occ__actions { min-width: 0; width: 100%; justify-content: stretch; }
+  .cad-occ__actions .cad-btn { flex: 1; height: var(--cad-control-mobile); justify-content: center; }
+
+  .cad-item__sku { width: auto; }
+  .cad-item__name { flex-basis: 100%; }
+
+  .cad-footer { flex-direction: column; gap: var(--cad-gap); }
+}

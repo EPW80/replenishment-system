@@ -1,0 +1,44 @@
+<!doctype html>
+<!--
+  Local development shell.
+
+  In production this page does not exist: the WordPress theme prints the mount element
+  and loads the same stylesheet and module (spec §4). Everything outside .cad-portal
+  here stands in for the theme, so keep it thin -- if the widget starts depending on
+  anything on this page, it will break inside the real one.
+
+  Served by cmd/portaldev, which also proxies /api to cadenceos with a portal JWT.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recurring orders — CadenceOS portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Public+Sans:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="./portal.css">
+  <style>
+    /* The host page's own styling, not the widget's. */
+    body { margin: 0; background: #FAF8F5; }
+  </style>
+</head>
+<body>
+  <div
+    class="cad-portal"
+    data-cad-portal
+    data-schedule-id=""
+    data-brand="House of Helix"
+    data-support-email="support@example.com"></div>
+
+  <script type="module" src="./src/main.js"></script>
+  <script>
+    // Stands in for the theme knowing which schedule the logged-in customer owns.
+    // cmd/portaldev substitutes a default; ?schedule=<id> overrides it.
+    const fromQuery = new URLSearchParams(location.search).get('schedule');
+    if (fromQuery) {
+      document.querySelector('[data-cad-portal]').dataset.scheduleId = fromQuery;
+    }
+  </script>
+</body>
+</html>
