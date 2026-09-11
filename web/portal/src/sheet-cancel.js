@@ -42,7 +42,7 @@ export function deflectionIntervals(intervalDays) {
   return [...new Set(candidates)];
 }
 
-export function openCancelSheet({ schedule, onDone, onChangeInterval, onPause }) {
+export function openCancelSheet({ schedule, onDone, onError, onChangeInterval, onPause }) {
   let reason = null;
   const body = el('div', { className: 'cad-stack' });
   // Set once the shell has built the dialog; the deflection's two ways out have to
@@ -52,7 +52,13 @@ export function openCancelSheet({ schedule, onDone, onChangeInterval, onPause })
 
   function paint() {
     const [longer, longest] = deflectionIntervals(schedule.interval_days);
-    const showDeflection = reason === 'too_frequent' && longer;
+    /* Cancel accepts a failed schedule; the two ways out of this panel do not. Cadence
+     * needs active or paused, pause needs active. Offering an escape route that can only
+     * answer 409 is worse than offering none, so each is gated on the status that can
+     * actually take it. */
+    const canChangeCadence = schedule.status === 'active' || schedule.status === 'paused';
+    const canPause = schedule.status === 'active';
+    const showDeflection = reason === 'too_frequent' && longer && (canChangeCadence || canPause);
 
     body.replaceChildren(
       el('div', { className: 'cad-stack' }, [
@@ -80,20 +86,22 @@ export function openCancelSheet({ schedule, onDone, onChangeInterval, onPause })
               textContent: `You are on ${schedule.interval_days} days. Moving to ${longer}${longest ? ` or ${longest}` : ''} keeps the recurring discount and stretches out the deliveries.`,
             }),
             el('div', { className: 'cad-chiprow' }, [
-              button({
-                label: `Go to ${longer} days`,
-                onClick: () => {
-                  dismiss();
-                  onChangeInterval(longer);
-                },
-              }),
-              button({
-                label: 'Pause instead',
-                onClick: () => {
-                  dismiss();
-                  onPause();
-                },
-              }),
+              canChangeCadence &&
+                button({
+                  label: `Go to ${longer} days`,
+                  onClick: () => {
+                    dismiss();
+                    onChangeInterval(longer);
+                  },
+                }),
+              canPause &&
+                button({
+                  label: 'Pause instead',
+                  onClick: () => {
+                    dismiss();
+                    onPause();
+                  },
+                }),
             ]),
           ]),
         ]),
@@ -105,6 +113,7 @@ export function openCancelSheet({ schedule, onDone, onChangeInterval, onPause })
     title: 'Cancel your recurring orders?',
     text: 'Nothing further will be charged and your scheduled orders are cleared. You can order again any time from the store — this only ends the schedule.',
     onDone,
+    onError,
     render: ({ close }) => {
       dismiss = close;
       return {

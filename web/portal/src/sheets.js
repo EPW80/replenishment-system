@@ -38,9 +38,20 @@ export function openSheet({ title, text, render, onDone, onError }) {
    * a second open would stack another beside it. Doing both here is deterministic; the
    * listener below still covers the paths the browser closes for us, Escape above all,
    * and remove() on an already-detached node is a no-op. */
+  /* A submit in flight holds the sheet open.
+   *
+   * Not politeness: the error surface is inside this dialog. Dismissing while the
+   * request is still running detaches it, and a 409 arriving a moment later writes the
+   * domain's message into a node nobody can see -- the transition is rejected and the
+   * customer is told nothing. Escape and the cancel button both route through here, so
+   * both are held until the request settles. */
+  let pending = false;
+
   const dismiss = () => {
+    if (pending) return false;
     dialog.close();
     dialog.remove();
+    return true;
   };
 
   const spec = render({ close: dismiss });
@@ -50,15 +61,21 @@ export function openSheet({ title, text, render, onDone, onError }) {
     variant: spec.submitVariant ?? 'primary',
     onClick: async () => {
       error.textContent = '';
+      pending = true;
       setPending(submit, true);
       try {
         const schedule = await spec.onSubmit();
+        pending = false;
         dismiss();
         onDone(schedule);
       } catch (err) {
         // Verbatim, inline, sheet still usable.
+        pending = false;
         error.textContent = err.message;
         setPending(submit, false);
+        // A rejection usually means this view is stale -- the schedule moved under it.
+        // Refreshing behind the open sheet is what makes the message actionable rather
+        // than merely true.
         onError?.(err);
       }
     },

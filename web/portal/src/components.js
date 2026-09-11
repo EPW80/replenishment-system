@@ -181,6 +181,17 @@ export function field({ label, value, placeholder = false, accent = false, extra
 
 /** `options` are `{ value, label, helper, trailing }`. `trailing` is a node parked at
  *  the end of the row -- the pause sheet's date field lives there. */
+/* Both consumers repaint on change, which replaces the very input the customer is
+ * standing on. A detached input takes focus with it, so the next arrow key goes nowhere
+ * and the group stops being navigable after a single press -- losing the one native
+ * behaviour this component exists to inherit.
+ *
+ * The intent has to be recorded when the change happens, not after the repaint: by then
+ * focus has already fallen back to the body and there is nothing left to infer it from.
+ * So a change driven from the keyboard or a click leaves a note here, and the rebuilt
+ * row that matches it claims focus once and clears it. */
+let pendingFocus = null;
+
 export function radioGroup({ name, options, value, onChange, className = '' }) {
   const rows = options.map((option) => {
     const input = el('input', {
@@ -189,8 +200,18 @@ export function radioGroup({ name, options, value, onChange, className = '' }) {
       name,
       value: option.value,
       checked: option.value === value,
-      onchange: () => onChange(option.value),
+      onchange: () => {
+        pendingFocus = { name, value: option.value };
+        onChange(option.value);
+      },
     });
+
+    if (pendingFocus && pendingFocus.name === name && pendingFocus.value === option.value) {
+      pendingFocus = null;
+      queueMicrotask(() => {
+        if (input.isConnected) input.focus();
+      });
+    }
 
     return el('label', { className: `cad-radio ${option.className ?? ''}`.trim() }, [
       input,
