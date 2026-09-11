@@ -185,8 +185,9 @@ func (svc *Service) Resume(ctx context.Context, scheduleID string, caller Caller
 				EventType:  domain.EventScheduleResumed,
 				Actor:      caller.Actor,
 				Payload: payload(map[string]any{
-					"anchor_date":   today.String(),
-					"interval_days": s.IntervalDays,
+					"anchor_date":     today.String(),
+					"interval_days":   s.IntervalDays,
+					"next_order_date": today.AddDays(s.IntervalDays).String(),
 				}),
 			}); err != nil {
 				return err

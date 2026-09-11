@@ -81,22 +81,16 @@ type Result struct {
 // backlog rather than leaving anything past the first page for tomorrow.
 //
 // A failure sending one notification does not abort the run — that would let one bad
-// address block every other customer's confirmation. Send failures are recorded via
-// MarkNotificationFailed and reported as outcomeSendFailed, not a Go error. But a
-// failure to even look up the schedule, render the template, or update
-// notification_log leaves that event still claimed rather than resolved; RunAll logs
-// it, moves on to the next event, and returns the first such error once the backlog
-// is drained, so cmd/notify's exit code reflects incomplete processing instead of
-// reporting success while a stuck event silently awaits its visibility timeout.
+// address block every other customer's confirmation. Failures are recorded or logged,
+// processing continues through the backlog, and RunAll returns an aggregate error so
+// cmd/notify's exit code cannot report success while any event failed.
 func (d *Dispatcher) RunAll(ctx context.Context) (Result, error) {
 	var res Result
-	var firstErr error
+	var runErr error
 	for {
 		events, err := d.repo.ClaimNotifiableEvents(ctx, notifiableEventTypes, visibilityTimeout, batchSize)
 		if err != nil {
-			if firstErr == nil {
-				firstErr = fmt.Errorf("claim notifiable events: %w", err)
-			}
+			runErr = errors.Join(runErr, fmt.Errorf("claim notifiable events: %w", err))
 			break
 		}
 		res.Claimed += len(events)
@@ -106,9 +100,7 @@ func (d *Dispatcher) RunAll(ctx context.Context) (Result, error) {
 			if err != nil {
 				d.log.Error("dispatch notification failed",
 					"schedule_event_id", e.ScheduleEventID, "event_type", e.EventType, "error", err)
-				if firstErr == nil {
-					firstErr = err
-				}
+				runErr = errors.Join(runErr, err)
 				continue
 			}
 			switch outcome {
@@ -118,6 +110,7 @@ func (d *Dispatcher) RunAll(ctx context.Context) (Result, error) {
 				res.Skipped++
 			case outcomeSendFailed:
 				res.SendFailed++
+				runErr = errors.Join(runErr, fmt.Errorf("notification send failed for schedule event %d", e.ScheduleEventID))
 			}
 		}
 
@@ -125,7 +118,7 @@ func (d *Dispatcher) RunAll(ctx context.Context) (Result, error) {
 			break
 		}
 	}
-	return res, firstErr
+	return res, runErr
 }
 
 type outcome int
@@ -140,9 +133,8 @@ const (
 //
 // The returned error is only for an infrastructure problem — the schedule could not
 // be read, the render failed, or notification_log could not be updated — never for a
-// send that Postmark itself rejected. That case is a normal, expected outcome
-// (outcomeSendFailed) recorded via MarkNotificationFailed, not a Go error: a batch of
-// a hundred events must not stop because one address bounced.
+// send that Postmark itself rejected. That case is recorded as outcomeSendFailed;
+// RunAll converts the outcome into an aggregate error after continuing the batch.
 func (d *Dispatcher) dispatchOne(ctx context.Context, e domain.NotifiableEvent) (outcome, error) {
 	s, err := d.repo.GetSchedule(ctx, e.ScheduleID, store.SystemScope())
 	if err != nil {

@@ -3,6 +3,7 @@ package notify
 import (
 	"bytes"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 
@@ -35,7 +36,7 @@ var cancellationReasonText = map[string]string{
 	domain.ReasonSwitchedBrand:  "switched to another brand",
 	domain.ReasonDeliveryIssue:  "a delivery issue",
 	domain.ReasonPaymentIssue:   "a payment issue",
-	domain.ReasonNoLongerWanted: "no longer needed",
+	domain.ReasonNoLongerWanted: "no longer wanted",
 	domain.ReasonOther:          "",
 }
 
@@ -76,12 +77,14 @@ func render(e domain.NotifiableEvent, s domain.Schedule, items []domain.Schedule
 	for _, it := range items {
 		data.Items = append(data.Items, itemData{SKU: it.SKU, Quantity: it.Quantity})
 	}
-	// From the freshly-fetched schedule, not the event's payload: s reflects the
-	// schedule's current state at send time, while the payload is a snapshot from
-	// whenever the event was recorded. A reclaimed, retried, or simply delayed send
-	// must not describe a paused_until that a later transition already changed.
+	// Start with the current row as a fallback for legacy events. applyEventSnapshot
+	// then replaces transition-specific fields for newer events, so delayed mail
+	// describes the state change that actually caused it.
 	if s.PausedUntil != nil {
 		data.PausedUntil = s.PausedUntil.String()
+	}
+	if err := applyEventSnapshot(&data, e); err != nil {
+		return "", "", err
 	}
 
 	if e.ReasonCode != nil {
@@ -96,4 +99,61 @@ func render(e domain.NotifiableEvent, s domain.Schedule, items []domain.Schedule
 		return "", "", fmt.Errorf("render body: %w", err)
 	}
 	return subjectBuf.String(), bodyBuf.String(), nil
+}
+
+// applyEventSnapshot replaces mutable schedule fields with the values captured by
+// the event. Empty legacy payloads fall back to the current row so pre-snapshot
+// events remain deliverable.
+func applyEventSnapshot(data *templateData, e domain.NotifiableEvent) error {
+	if len(e.Payload) == 0 || string(e.Payload) == "{}" {
+		return nil
+	}
+
+	var snapshot map[string]json.RawMessage
+	if err := json.Unmarshal(e.Payload, &snapshot); err != nil {
+		return fmt.Errorf("decode event snapshot: %w", err)
+	}
+	if len(snapshot) == 0 {
+		return nil
+	}
+
+	readString := func(key string, dst *string) error {
+		raw, ok := snapshot[key]
+		if !ok {
+			return nil
+		}
+		if err := json.Unmarshal(raw, dst); err != nil {
+			return fmt.Errorf("decode event snapshot field %s: %w", key, err)
+		}
+		return nil
+	}
+	readInt := func(key string, dst *int) error {
+		raw, ok := snapshot[key]
+		if !ok {
+			return nil
+		}
+		if err := json.Unmarshal(raw, dst); err != nil {
+			return fmt.Errorf("decode event snapshot field %s: %w", key, err)
+		}
+		return nil
+	}
+
+	switch e.EventType {
+	case domain.EventScheduleCreated, domain.EventScheduleResumed:
+		if err := readInt("interval_days", &data.IntervalDays); err != nil {
+			return err
+		}
+		if err := readString("anchor_date", &data.AnchorDate); err != nil {
+			return err
+		}
+		if err := readString("next_order_date", &data.NextOrderDate); err != nil {
+			return err
+		}
+	case domain.EventSchedulePaused:
+		data.PausedUntil = ""
+		if err := readString("paused_until", &data.PausedUntil); err != nil {
+			return err
+		}
+	}
+	return nil
 }

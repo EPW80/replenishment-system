@@ -76,10 +76,10 @@ forever because the process that claimed it died. This is what makes the at-leas
 gap above recoverable rather than merely tolerated.
 
 **`maxAttempts = 5`, then the row is `failed` and never reclaimed.** Without a cap, one
-permanently bad address retries on every run forever and crowds out newer sends. Note
-that a Postmark rejection is not a Go error in the dispatcher — it is a normal outcome
-recorded through `MarkNotificationFailed`, because a batch of a hundred events must not
-stop because one address bounced.
+permanently bad address retries on every run forever and crowds out newer sends. A
+Postmark rejection is recorded through `MarkNotificationFailed`; the dispatcher keeps
+processing the rest of the backlog, then returns an aggregate error so the scheduled
+task cannot report a false green run.
 
 **The schedule is read fresh at send time**, not carried on the event. A customer who
 corrects their `customer_email` after the event was recorded receives at the address
@@ -98,10 +98,11 @@ not a failure.
   and skip/defer are exactly-once (ADRs 0008, 0009); notifications are at-least-once.
   Anyone reading `notification_log`'s unique constraint as the same kind of guard the
   occurrence key provides will misread it — hence this record.
-- **A permanently failing address goes quiet after five attempts.** The row is `failed`
-  with `last_error` populated, and nothing raises an alarm about it: there is no
-  failure-queue view until Phase 6. Until then, discovering a stuck notification means
-  querying `notification_log` directly.
+- **A permanently failing address goes quiet after five attempts.** Each failed
+  attempt makes that scheduled run exit non-zero, and the row ends as `failed` with
+  `last_error` populated. Coolify records the failed execution, but there is no paging
+  or failure-queue view until Phase 6; inspecting an older terminal failure still
+  requires querying `notification_log` directly.
 - **Notifications can be delayed by up to the visibility timeout** in the crash case,
   since a claimed-but-unresolved row is not reconsidered for fifteen minutes. That is
   acceptable for pause/resume/cancel confirmations. It would not be acceptable for the
