@@ -4,6 +4,8 @@ A standalone scheduling service that turns one-time WooCommerce purchases into
 recurring orders on a customer-controlled cadence, with pause, skip, defer, and
 cadence-change built in.
 
+![CadenceOS development console](docs/assets/cadenceos-console.png)
+
 **Status:** early development. Spec Phase 1 (core scheduling) is in progress; no
 orders are placed yet. Full technical spec:
 [`docs/replenishment-service-spec.md`](docs/replenishment-service-spec.md).
