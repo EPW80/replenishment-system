@@ -15,7 +15,23 @@
 
 import { ApiError } from './api.js';
 
-async function post(scheduleID, action, body) {
+/* The host's token exchange, shared with the read path.
+ *
+ * Writes need it as much as reads do, and for longer: a portal left open past the
+ * token's expiry would otherwise have working reads -- they refresh and retry -- and
+ * every transition dead at 401, with no way back except reloading the page.
+ *
+ * The retry replays the *same* body, which matters more here than on a read. Skip and
+ * defer carry an idempotency key, and minting a fresh one for the retry would turn a
+ * refreshed credential into a second, different mutation. Replaying the original key
+ * is what makes the retry a retry (ADR 0009). */
+let reauthenticate = null;
+
+export function setReauthenticator(fn) {
+  reauthenticate = fn;
+}
+
+async function post(scheduleID, action, body, retried = false) {
   const path = `/api/schedules/${encodeURIComponent(scheduleID)}/${action}`;
 
   let res;
@@ -30,6 +46,15 @@ async function post(scheduleID, action, body) {
     });
   } catch (cause) {
     throw new ApiError(0, 'Could not reach the server.', { cause });
+  }
+
+  if (res.status === 401 && reauthenticate && !retried) {
+    try {
+      await reauthenticate();
+      return post(scheduleID, action, body, true);
+    } catch {
+      /* fall through and surface the 401 */
+    }
   }
 
   let payload = null;

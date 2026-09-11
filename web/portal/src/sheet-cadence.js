@@ -33,13 +33,27 @@ export function previewAnchor(occurrences, timezone, now = new Date()) {
   return { anchor: latest.scheduled_for, fromPlacedOrder: true };
 }
 
-/** The next `count` dates a given interval would produce from an anchor. */
-export function previewDates(anchor, intervalDays, count = 3) {
-  return Array.from({ length: count }, (_, i) => addDays(anchor, intervalDays * (i + 1)));
+/** The next `count` dates a given interval would produce from an anchor.
+ *
+ *  `armed` are occurrences the service will not move. ChangeCadence cancels the planned
+ *  occurrences and rewrites them from the new anchor, but deliberately leaves `pending`
+ *  ones where they are -- the pre-billing notice has already gone out for those, and
+ *  TestChangeCadenceLeavesPendingOccurrencesAlone pins the behaviour. A preview that
+ *  recomputed every date would then disagree with the schedule the transition returns,
+ *  so the armed dates are shown first and the generated ones fill in behind them.
+ *
+ *  Nothing sets `pending` until Phase 2 arming, so today this is always the simple
+ *  case; it is here because the preview claims to mirror the service. */
+export function previewDates(anchor, intervalDays, count = 3, armed = []) {
+  const kept = armed.map((o) => o.scheduled_for).sort();
+  const generated = Array.from({ length: count }, (_, i) => addDays(anchor, intervalDays * (i + 1)));
+  return [...kept, ...generated.filter((d) => !kept.includes(d))].slice(0, count);
 }
 
-export function openCadenceSheet({ schedule, occurrences, onDone }) {
+export function openCadenceSheet({ schedule, occurrences, onDone, onError }) {
   const { anchor, fromPlacedOrder } = previewAnchor(occurrences, schedule.timezone);
+  // Armed occurrences survive a cadence change untouched; see previewDates.
+  const armed = occurrences.filter((o) => o.status === 'pending');
   let interval = schedule.interval_days;
 
   const preview = el('div', { className: 'cad-preview' });
@@ -53,8 +67,12 @@ export function openCadenceSheet({ schedule, occurrences, onDone }) {
     preview.replaceChildren(
       el('div', { className: 'cad-field__label', textContent: 'What this changes' }),
       el('div', { className: 'cad-preview__grid' }, [
-        previewColumn(`Now — every ${schedule.interval_days} days`, previewDates(anchor, schedule.interval_days), false),
-        previewColumn(`After — every ${interval} days`, previewDates(anchor, interval), true),
+        previewColumn(
+          `Now — every ${schedule.interval_days} days`,
+          previewDates(anchor, schedule.interval_days, 3, armed),
+          false,
+        ),
+        previewColumn(`After — every ${interval} days`, previewDates(anchor, interval, 3, armed), true),
       ]),
       el('div', {
         className: 'cad-preview__note',
@@ -93,6 +111,7 @@ export function openCadenceSheet({ schedule, occurrences, onDone }) {
     title: 'How often should this repeat?',
     text: 'Pick the gap between orders. Anything from 7 to 180 days. This changes every future order, not just the next one.',
     onDone,
+    onError,
     render: () => ({
       content: el('div', { className: 'cad-stack' }, [
         chipRow([...chips.values()]),
@@ -123,7 +142,7 @@ function previewColumn(label, dates, after) {
  * one date moving and says plainly that the order after it does not. A preview that slid
  * the following dates would be showing the drift spec §6 exists to prevent.
  */
-export function openDeferSheet({ schedule, occurrences, onDone }) {
+export function openDeferSheet({ schedule, occurrences, onDone, onError }) {
   const { upcoming } = splitOccurrences(occurrences);
   const target = upcoming[0];
   if (!target) return null;
@@ -150,6 +169,7 @@ export function openDeferSheet({ schedule, occurrences, onDone }) {
     title: 'Push back just this order',
     text: `Move the ${formatMedium(target.scheduled_for)} order later without changing your interval. Afterwards you go straight back to your normal rhythm — this does not slide every order forward.`,
     onDone,
+    onError,
     render: () => ({
       content: el('div', { className: 'cad-stack' }, [
         el('div', { className: 'cad-inline' }, [

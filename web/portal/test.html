@@ -194,6 +194,25 @@
     check('preview dates at 42 days', previewDates('2026-08-21', 42), ['2026-10-02', '2026-11-13', '2026-12-25']);
     check('preview dates at 28 days', previewDates('2026-08-21', 28), ['2026-09-18', '2026-10-16', '2026-11-13']);
 
+    // ChangeCadence leaves armed (pending) occurrences where they are, so the preview
+    // keeps their dates and fills in behind them. Unreachable until Phase 2 arming, but
+    // the preview claims to mirror the service.
+    check(
+      'an armed occurrence keeps its date in the preview',
+      previewDates('2026-08-21', 42, 3, [{ scheduled_for: '2026-09-18', status: 'pending' }]),
+      ['2026-09-18', '2026-10-02', '2026-11-13'],
+    );
+    check(
+      'an armed date already in the generated run is not duplicated',
+      previewDates('2026-08-21', 28, 3, [{ scheduled_for: '2026-09-18', status: 'pending' }]),
+      ['2026-09-18', '2026-10-16', '2026-11-13'],
+    );
+    check('no armed occurrences leaves the run untouched', previewDates('2026-08-21', 42, 3, []), [
+      '2026-10-02',
+      '2026-11-13',
+      '2026-12-25',
+    ]);
+
     /* --- Cancel deflection -------------------------------------------------- */
     check('deflection from 28 days offers 42 and 56', deflectionIntervals(28), [42, 56]);
     check('deflection from 14 days offers 21 and 28', deflectionIntervals(14), [21, 28]);

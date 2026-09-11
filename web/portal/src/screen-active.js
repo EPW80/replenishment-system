@@ -45,7 +45,7 @@ import { openCadenceSheet, openDeferSheet } from './sheet-cadence.js';
 import { openPauseSheet, resumeSchedule } from './sheet-pause.js';
 import { openCancelSheet } from './sheet-cancel.js';
 import { openSkipSheet } from './sheet-skip.js';
-import { changeCadence } from './transitions.js';
+import { changeCadence, setReauthenticator } from './transitions.js';
 
 export function mountActiveSchedule(root, config) {
   const { scheduleID } = config;
@@ -55,6 +55,8 @@ export function mountActiveSchedule(root, config) {
   const state = {
     schedule: { phase: 'loading' },
     occurrences: { phase: 'loading' },
+    // Set by a sheet-less write that failed; see runDirect.
+    actionError: null,
   };
 
   // Both halves are in flight at once, so an expired token 401s both. They share one
@@ -123,6 +125,26 @@ export function mountActiveSchedule(root, config) {
 
   // The portal implements the transitions itself now, so the host no longer supplies
   // handlers for them -- only the URLs it alone knows (payment, orders) and the token
+  /* Resume, and the deflection's "Go to N days", are writes with no sheet to report
+   * into -- one is a bare button on the card, the other runs after the cancel sheet has
+   * closed itself. Left as bare promises they failed silently: an unhandled rejection,
+   * nothing on screen, and no way to try again. They report into a band on the page
+   * instead, carrying the domain's message verbatim and a retry that re-runs the same
+   * action. */
+  async function runDirect(action, retry) {
+    state.actionError = null;
+    paint();
+    try {
+      applyTransition(await action());
+    } catch (err) {
+      state.actionError = { message: err.message, retry };
+      paint();
+      // Same reasoning as a sheet's onError: a rejection usually means this view is
+      // stale, so re-read underneath the message.
+      load();
+    }
+  }
+
   // exchange. `screenConfig` is what the view renders from.
   const screenConfig = {
     ...config,
@@ -130,16 +152,29 @@ export function mountActiveSchedule(root, config) {
       schedule: () => (state.schedule.phase === 'ready' ? state.schedule.data : null),
       occurrences: () => (state.occurrences.phase === 'ready' ? state.occurrences.data : []),
       applyTransition,
+      refresh: () => {
+        fetchHalf('schedule', () => getSchedule(scheduleID));
+        fetchHalf('occurrences', () => getOccurrences(scheduleID));
+      },
+      runDirect,
     }),
   };
+
+  // Writes share the read path's single-flighted token exchange; without this a 401 is
+  // terminal for every transition while reads quietly recover.
+  if (config.onReauthenticate) setReauthenticator(reauthenticate);
 
   load();
   return { reload: load };
 }
 
 /** Builds the five handlers the screen's controls call, each opening its sheet against
- *  the data as it stands at the moment of the click. */
-function transitionActions({ schedule, occurrences, applyTransition }) {
+ *  the data as it stands at the moment of the click.
+ *
+ *  `refresh` is handed to every sheet as `onError`: a rejected transition almost always
+ *  means the view is stale, so the data underneath is re-read while the message stands.
+ *  `runDirect` is for the two writes that have no sheet to report into. */
+function transitionActions({ schedule, occurrences, applyTransition, refresh, runDirect }) {
   const open = (fn) => () => {
     const current = schedule();
     if (current) fn(current);
@@ -148,40 +183,61 @@ function transitionActions({ schedule, occurrences, applyTransition }) {
   const changeInterval = (preset) => {
     const current = schedule();
     if (!current) return;
+    // A number comes from the cancel sheet's deflection, which has already closed
+    // itself -- so this write has no sheet to fail into and goes through runDirect.
     if (typeof preset === 'number') {
-      changeCadence(current.id, preset).then(applyTransition);
+      runDirect(() => changeCadence(current.id, preset), () => changeInterval(preset));
       return;
     }
-    openCadenceSheet({ schedule: current, occurrences: occurrences(), onDone: applyTransition });
+    openCadenceSheet({
+      schedule: current,
+      occurrences: occurrences(),
+      onDone: applyTransition,
+      onError: refresh,
+    });
   };
 
   const pauseNow = open((current) =>
-    openPauseSheet({ schedule: current, onDone: applyTransition }),
+    openPauseSheet({ schedule: current, onDone: applyTransition, onError: refresh }),
+  );
+
+  const resumeNow = open((current) =>
+    runDirect(() => resumeSchedule(current), resumeNow),
   );
 
   return {
     onChangeInterval: changeInterval,
     onPause: pauseNow,
-    onResume: open((current) => resumeSchedule(current).then(applyTransition)),
+    onResume: resumeNow,
     onDefer: open((current) =>
-      openDeferSheet({ schedule: current, occurrences: occurrences(), onDone: applyTransition }),
+      openDeferSheet({
+        schedule: current,
+        occurrences: occurrences(),
+        onDone: applyTransition,
+        onError: refresh,
+      }),
     ),
-    onSkip: (occ) => {
+    // Skip takes no occurrence: the service acts on whichever is soonest
+    // (NextActionableOccurrence). So the sheet names that one and the row action is
+    // offered on that row alone -- see upcomingRow.
+    onSkip: () => {
       const current = schedule();
       if (!current) return;
       const { upcoming } = splitOccurrences(occurrences());
-      const index = upcoming.findIndex((o) => o.sequence_no === occ.sequence_no);
+      if (upcoming.length === 0) return;
       openSkipSheet({
         schedule: current,
-        target: occ,
-        following: index >= 0 ? upcoming[index + 1] : undefined,
+        target: upcoming[0],
+        following: upcoming[1],
         onDone: applyTransition,
+        onError: refresh,
       });
     },
     onCancel: open((current) =>
       openCancelSheet({
         schedule: current,
         onDone: applyTransition,
+        onError: refresh,
         onChangeInterval: changeInterval,
         onPause: pauseNow,
       }),
@@ -196,6 +252,14 @@ function transitionActions({ schedule, occurrences, applyTransition }) {
 function view(state, config, handlers) {
   return el('div', { className: 'cad-page' }, [
     masthead(config),
+    // A write that had no sheet to fail into reports here, above the card it acted on.
+    state.actionError &&
+      band({
+        variant: 'crit',
+        heading: 'That did not go through',
+        text: state.actionError.message,
+        action: button({ label: 'Try again', onClick: state.actionError.retry }),
+      }),
     scheduleCard(state.schedule, config, handlers),
     queueCard(state, config, handlers),
     footer(config, state.schedule.phase === 'ready' ? state.schedule.data : null),
@@ -484,7 +548,12 @@ function queueCard(state, config, handlers) {
   } else {
     body.push(
       section([
-        el('div', { className: 'cad-queue' }, upcoming.map((occ) => upcomingRow(occ, schedule, config))),
+        el(
+          'div',
+          { className: 'cad-queue' },
+          // Only the first row carries the actions; see upcomingRow.
+          upcoming.map((occ, index) => upcomingRow(occ, schedule, config, index === 0)),
+        ),
       ]),
     );
   }
@@ -512,12 +581,27 @@ function emptyReason(schedule) {
   return 'Nothing is scheduled yet. Your next order will appear here shortly.';
 }
 
-function upcomingRow(occ, schedule, config) {
-  const actions = [
-    config.onSkip && button({ label: 'Skip', variant: 'row', onClick: () => config.onSkip(occ) }),
-    config.onDefer &&
-      button({ label: 'Push back', variant: 'row', onClick: () => config.onDefer(occ) }),
-  ].filter(Boolean);
+/* `actionable` marks the one row skip and defer will actually affect.
+ *
+ * Neither endpoint takes an occurrence: each resolves its own target as the soonest
+ * planned or pending one (NextActionableOccurrence, ordered by scheduled_for), which is
+ * exactly this list's first row. Rendering the actions on every row implied a choice
+ * the API does not offer -- pressing Skip on the third row skipped the first, while the
+ * confirmation named the third. A customer would have been told one date and had
+ * another one skipped.
+ *
+ * So the actions live only where they are truthful. The action column keeps its width
+ * on the rest, so the status pills stay on one vertical line down the list. */
+function upcomingRow(occ, schedule, config, actionable) {
+  // Skip and defer are accepted on an active schedule only. A paused or failed one
+  // still has planned occurrences on screen, but both actions could only answer 409 --
+  // the same rule as the manage column and the cancel link.
+  const actions = actionable && schedule.status === 'active'
+    ? [
+        config.onSkip && button({ label: 'Skip', variant: 'row', onClick: config.onSkip }),
+        config.onDefer && button({ label: 'Push back', variant: 'row', onClick: config.onDefer }),
+      ].filter(Boolean)
+    : [];
 
   return occurrenceRow({
     sequenceNo: occ.sequence_no,

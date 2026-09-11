@@ -11,12 +11,13 @@
  * rather than leaving a stale list on screen.
  */
 
+import { ApiError } from './api.js';
 import { el, radioGroup } from './components.js';
 import { addDays, todayIn } from './dates.js';
 import { openSheet } from './sheets.js';
 import { pause, resume } from './transitions.js';
 
-export function openPauseSheet({ schedule, onDone }) {
+export function openPauseSheet({ schedule, onDone, onError }) {
   const today = todayIn(schedule.timezone);
   let mode = 'until';
   // A default that is unambiguously in the future in the schedule's timezone: the
@@ -67,12 +68,24 @@ export function openPauseSheet({ schedule, onDone }) {
     title: 'Pause your recurring orders',
     text: 'Nothing is charged while paused, and the orders already scheduled are cleared. Set a date to start again automatically, or leave it open and resume whenever you like.',
     onDone,
+    onError,
     render: () => ({
       content: group,
       submitLabel: 'Pause orders',
       cancelLabel: 'Never mind',
-      onSubmit: () =>
-        pause(schedule.id, mode === 'until' ? { pausedUntil: untilDate } : {}),
+      onSubmit: () => {
+        /* An empty date field must not fall through to an open-ended pause.
+         *
+         * The two modes are distinguished by whether a body is sent at all, so a
+         * cleared field would submit "Resume automatically on a date" and create an
+         * indefinite pause instead -- the customer choosing the safer option and
+         * getting the other one. There is no form element here to enforce the input's
+         * own constraints, so the check is explicit. */
+        if (mode === 'until' && !untilDate) {
+          throw new ApiError(0, 'Choose the date to resume on, or pause until you say otherwise.');
+        }
+        return pause(schedule.id, mode === 'until' ? { pausedUntil: untilDate } : {});
+      },
     }),
   });
 }
