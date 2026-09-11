@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Development console for exercising the CadenceOS schedule API.">
+  <title>CadenceOS Console</title>
+  <link rel="stylesheet" href="/console/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="topbar">
+    <a class="brand" href="/console/" data-link aria-label="CadenceOS schedule list">
+      <span class="brand-mark" aria-hidden="true">C</span>
+      <span><strong>CadenceOS</strong><small>Development console</small></span>
+    </a>
+    <div class="top-actions">
+      <span class="connection" id="connection-state"><span></span>Not connected</span>
+      <button class="button secondary compact" id="settings-button" type="button">API connection</button>
+    </div>
+  </header>
+
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Schedule navigation">
+      <div class="sidebar-heading">
+        <div><span class="eyebrow">Customer</span><strong id="customer-label">Not set</strong></div>
+        <button class="icon-button" id="refresh-button" type="button" aria-label="Refresh schedules" title="Refresh schedules">↻</button>
+      </div>
+      <div id="schedule-list" class="schedule-list" aria-live="polite"></div>
+      <button class="button primary create-button" id="create-button" type="button">Create test schedule</button>
+    </aside>
+
+    <main id="main" tabindex="-1">
+      <div id="global-message" class="message" hidden role="alert"></div>
+      <section id="content" aria-live="polite"></section>
+    </main>
+  </div>
+
+  <dialog id="action-dialog" aria-labelledby="dialog-title">
+    <form method="dialog" class="dialog-shell" id="dialog-form">
+      <div class="dialog-header">
+        <div><span class="eyebrow" id="dialog-eyebrow">Schedule action</span><h2 id="dialog-title"></h2></div>
+        <button class="icon-button" value="cancel" aria-label="Close dialog">×</button>
+      </div>
+      <div id="dialog-body" class="dialog-body"></div>
+      <div id="dialog-error" class="message error" hidden role="alert"></div>
+      <div class="dialog-actions">
+        <button class="button secondary" value="cancel">Cancel</button>
+        <button class="button primary" id="dialog-submit" value="default">Continue</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script src="/console/app.js" defer></script>
+</body>
+</html>

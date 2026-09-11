@@ -7,6 +7,8 @@ import "net/http"
 func NewRouter(h HealthChecker) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.Health)
+	mux.Handle("GET /console", http.RedirectHandler("/console/", http.StatusTemporaryRedirect))
+	mux.Handle("GET /console/", NewConsoleHandler())
 	return mux
 }
 
@@ -27,6 +29,8 @@ func NewServiceRouter(h HealthChecker, s ScheduleHandler, t TransitionHandler, m
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", h.Health)
+	mux.Handle("GET /console", http.RedirectHandler("/console/", http.StatusTemporaryRedirect))
+	mux.Handle("GET /console/", NewConsoleHandler())
 
 	customer := func(pattern string, fn http.HandlerFunc) {
 		mux.Handle(pattern, mw.RequireCustomer(fn))
