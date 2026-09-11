@@ -108,5 +108,5 @@ jobs:
       expected-sha: ${{ inputs.commit-sha }}
     # Intentionally the last automated step. Its failure is the trigger for a rollback
     # DECISION, not an automatic rollback. There is no rollback workflow: the deploy
-    # webhook takes no commit SHA, so it cannot target a known-good release. Recovery
-    # is manual -- see docs/LIFECYCLE.md section 12.
+    # Recovery remains a human decision even though production can pin a known-good
+    # commit through the Coolify API -- see docs/LIFECYCLE.md section 12.

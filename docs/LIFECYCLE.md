@@ -157,26 +157,20 @@ roll back on its own.
 
 **There is no rollback workflow. Rollback is a manual operation.**
 
-`rollback.yml` existed as a stub and was deleted, because the deploy mechanism
-cannot do what it promised. Its input was the SHA of the last known-good release,
-but the Coolify deploy webhook takes no commit SHA — it builds whatever the branch
-it tracks currently points at
-([`DEPLOYMENT.md`](DEPLOYMENT.md#what-the-deploy-step-actually-does)). Wiring the
-same webhook into it would have rebuilt *the broken release being rolled back
-from*, and reported success while doing it. During an incident, that is worse than
-having nothing: the guidance this section used to carry — a workflow that pretends
-to roll back is worse than none, because people plan around it — applied to itself.
+`rollback.yml` existed as a stub and was deleted because it could not target a known
+commit. Production deployment now pins `git_commit_sha` through the Coolify API, but
+rollback remains manual: a human must verify the selected release's migration and
+rollback metadata before changing production.
 
-**What to do instead, today.** Recovering means getting the tracked branch back to
-the known-good commit and redeploying it, which is a human-planned operation
-because it means changing shared history. Check the release record's
+**What to do instead, today.** Pin the known-good commit through the same Coolify API
+flow used by production deployment, then redeploy it. Check the release record's
 `rollback_safe` first; if it is `false` — usually a destructive migration — a
 redeploy is not recovery at all and the database state has to be planned for
 separately.
 
 **What would make it automatable.** Deploying a per-commit registry image tag
-rather than rebuilding from a branch. Rollback then becomes "deploy tag X," a
-genuine rollback rather than a rebuild of whatever the branch happens to point at.
+rather than rebuilding from source. Rollback then becomes "deploy tag X," with the
+exact bytes already verified in staging.
 [`DEPLOYMENT.md`](DEPLOYMENT.md) already names moving to a registry image as the
 better shape; this is a second reason to want it. Reintroduce a rollback workflow
 when that exists, not before.

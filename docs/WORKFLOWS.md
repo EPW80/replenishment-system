@@ -31,7 +31,7 @@ automatable.
 | `security-check.yml` | call | **Functional** — `make security` | `contents: read` |
 | `staging-deploy.yml` | call | **Functional** — posts the Coolify webhook; needs the `staging` Environment (#40) | `contents: read` |
 | `staging-health-check.yml` | call | **Functional** | none |
-| `production-deploy.yml` | call | **Functional** — posts the Coolify webhook; needs the `production` Environment (#40) | `contents: read` |
+| `production-deploy.yml` | call | **Functional** — pins and deploys the approved SHA through the Coolify API; needs the `production` Environment (#40) | `contents: read` |
 | `production-health-check.yml` | call | **Functional** | none |
 | `pr-checks.yml` | PR, push | Functional caller | `contents: read` |
 | `deploy.yml` | dispatch | Functional caller | `contents: read`; its `validate` job none |

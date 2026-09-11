@@ -8,13 +8,15 @@ pauses for the `production` Environment's required reviewer before any step runs
 
 ## GitHub Environment configuration
 
-Two GitHub Environments, `staging` and `production`, each with:
+Create `staging` and `production` GitHub Environments with the applicable values:
 
 | Kind | Name | Value |
 | --- | --- | --- |
-| Secret | `COOLIFY_DEPLOY_WEBHOOK_URL` | That application's Coolify deploy webhook |
+| Secret | `COOLIFY_DEPLOY_WEBHOOK_URL` | Staging application's Coolify deploy webhook |
 | Secret | `COOLIFY_API_TOKEN` | Coolify API token authorized for that application |
 | Variable | `APP_URL` | Public URL the health check probes, e.g. `https://staging.example.com` |
+| Variable | `COOLIFY_API_URL` | Production only: Coolify API base URL ending in `/api/v1` |
+| Variable | `COOLIFY_APPLICATION_UUID` | Production only: application UUID to pin and deploy |
 
 The deploy job binds its Environment, which is what lets it read these. A reusable
 workflow cannot be handed them by its caller — `deploy.yml` cannot forward Environment
@@ -78,29 +80,25 @@ The nightly jobs run in this same image. See
 
 ## What the deploy step actually does
 
-It calls the Coolify deploy webhook and returns as soon as the deployment is *queued*.
-It does not wait for the rollout — the health check polls until the endpoint reports
-the expected SHA, which is the real completion signal.
+Staging calls the Coolify deploy webhook and therefore builds the tracked branch tip.
+Production uses the authenticated Coolify API in two steps: it first updates the
+application's `git_commit_sha` to the approved 40-character SHA, then queues a forced
+deployment of that application UUID. This prevents a branch update between approval
+and deployment from changing the production target.
 
-**The webhook does not take a commit SHA.** Coolify builds whatever the branch it
-tracks currently points at. So the workflow's `commit-sha` input does not control what
-gets built; it controls what the health check demands to see afterwards. Two
-consequences:
+Both paths return as soon as deployment is *queued*. The health check polls until the
+endpoint reports the expected SHA, which is the real completion signal. A SHA mismatch
+is a failed deploy, not a transient probe failure.
 
-- Point Coolify at the branch being deployed, and deploy from that branch's tip.
-- If the tip moved between approval and deploy, the health check fails because the
-  served commit will not match. That is the intended behaviour and the reason
-  `production-deploy` verifies `commit-sha` against the approved SHA first.
-
-Production rebuilds from source rather than promoting the image staging verified. The
-inputs are identical — same commit, same `Dockerfile`, pinned base images — but this is
-a real deviation from "promote the artifact you tested", accepted because Coolify's
-webhook builds from git. Moving to a registry image is the better shape if that becomes
-available.
+Production rebuilds the exact approved source revision rather than promoting the image
+staging verified. The commit and Dockerfile are fixed, but this remains a deviation
+from "promote the artifact you tested"; a per-commit registry image is still the
+stronger future shape.
 
 ## First deploy checklist
 
-1. Create both GitHub Environments with the three values above.
+1. Create both GitHub Environments with the values above. Production requires
+   `COOLIFY_API_URL` and `COOLIFY_APPLICATION_UUID`; staging requires the webhook URL.
 2. Configure the Coolify application per environment, including `BUILD_SHA` and the
    `migrate` pre-deployment command.
 3. Add the required reviewer on the `production` Environment — this is the

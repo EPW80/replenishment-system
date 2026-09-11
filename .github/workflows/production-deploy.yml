@@ -68,17 +68,9 @@ jobs:
           ref: ${{ inputs.commit-sha }}
           persist-credentials: false
 
-      # Same mechanism as staging-deploy.yml; read the notes there on why migrations
-      # do not run on this runner and on what the webhook actually deploys.
-      #
-      # ON REBUILDING: the stub this replaced asked for the artifact verified on
-      # staging to be promoted, because rebuilding means production runs a build
-      # nobody tested. Coolify's deploy webhook builds from git rather than promoting
-      # an image, so this rebuilds the same source instead. That is a real, accepted
-      # deviation, not an oversight: the inputs are identical (same commit, same
-      # Dockerfile, pinned base images), and the guard against a build that differs
-      # anyway is production-health-check asserting the served commit. Promoting a
-      # registry image is the better shape if this ever moves to one.
+      # Pin the application to the approved commit before queueing the deployment.
+      # A bare deploy webhook builds the current branch tip, which can move between
+      # approval and this step; git_commit_sha makes the deploy target immutable.
       #
       # If the release includes a migration it is applied by the Coolify
       # pre-deployment command, and the record's database_migration and rollback_safe
@@ -86,13 +78,23 @@ jobs:
       - name: Deploy to production
         id: deploy
         env:
-          WEBHOOK_URL: ${{ secrets.COOLIFY_DEPLOY_WEBHOOK_URL }}
+          API_URL: ${{ vars.COOLIFY_API_URL }}
+          APPLICATION_UUID: ${{ vars.COOLIFY_APPLICATION_UUID }}
           API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
           APP_URL: ${{ vars.APP_URL }}
+          COMMIT_SHA: ${{ inputs.commit-sha }}
         run: |
-          set -u
-          if [ -z "$WEBHOOK_URL" ]; then
-            echo "::error::COOLIFY_DEPLOY_WEBHOOK_URL is not set on this Environment."
+          set -eu
+          if [ -z "$API_URL" ]; then
+            echo "::error::COOLIFY_API_URL is not set on this Environment."
+            exit 1
+          fi
+          case "$API_URL" in
+            https://*) ;;
+            *) echo "::error::COOLIFY_API_URL must use HTTPS."; exit 1 ;;
+          esac
+          if ! printf '%s' "$APPLICATION_UUID" | grep -Eq '^[A-Za-z0-9_-]+$'; then
+            echo "::error::COOLIFY_APPLICATION_UUID is missing or invalid."
             exit 1
           fi
           if [ -z "$API_TOKEN" ]; then
@@ -104,17 +106,34 @@ jobs:
             exit 1
           fi
 
-          # curl still prints %{http_code} (as 000) when the connection itself fails,
-          # so the fallback assigns rather than appends -- "|| echo 000" would
-          # concatenate onto that and report a nonsense 000000.
+          API_URL="${API_URL%/}"
           BODY_FILE="$(mktemp)"
-          CODE="$(curl -sS -o "$BODY_FILE" -w '%{http_code}' --max-time 60 \
-            -X POST -H "Authorization: Bearer $API_TOKEN" "$WEBHOOK_URL" 2>>"$BODY_FILE")" || CODE=000
+          trap 'rm -f "$BODY_FILE"' EXIT
 
-          if [ "$CODE" != "200" ] && [ "$CODE" != "201" ] && [ "$CODE" != "202" ]; then
-            echo "::error::Coolify deploy webhook returned HTTP $CODE"
+          CODE="$(curl -sS -o "$BODY_FILE" -w '%{http_code}' --max-time 60 \
+            -X PATCH \
+            -H "Authorization: Bearer $API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data "{\"git_commit_sha\":\"$COMMIT_SHA\"}" \
+            "$API_URL/applications/$APPLICATION_UUID" 2>>"$BODY_FILE")" || CODE=000
+
+          if [ "$CODE" != "200" ]; then
+            echo "::error::Coolify could not pin the application to the approved commit (HTTP $CODE)"
             sed -n '1,20p' "$BODY_FILE"
             exit 1
           fi
-          echo "Deployment queued (HTTP $CODE)."
+
+          : > "$BODY_FILE"
+          CODE="$(curl -sS -o "$BODY_FILE" -w '%{http_code}' --max-time 60 \
+            -X POST \
+            -H "Authorization: Bearer $API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data "{\"uuid\":\"$APPLICATION_UUID\",\"force\":true}" \
+            "$API_URL/deploy" 2>>"$BODY_FILE")" || CODE=000
+          if [ "$CODE" != "200" ] && [ "$CODE" != "201" ] && [ "$CODE" != "202" ]; then
+            echo "::error::Coolify deploy API returned HTTP $CODE"
+            sed -n '1,20p' "$BODY_FILE"
+            exit 1
+          fi
+          echo "Approved commit $COMMIT_SHA pinned and deployment queued (HTTP $CODE)."
           echo "url=$APP_URL" >> "$GITHUB_OUTPUT"
