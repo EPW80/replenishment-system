@@ -177,6 +177,11 @@ func (h ScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 			// JWT -- the service can verify a trusted backend called, not that a
 			// person clicked, so the actor records what it can verify.
 			Actor: domain.ActorSystem,
+			Payload: scheduleEventPayload(map[string]any{
+				"anchor_date":     s.AnchorDate.String(),
+				"interval_days":   s.IntervalDays,
+				"next_order_date": "",
+			}),
 		})
 	})
 
@@ -204,6 +209,14 @@ func (h ScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, h.toResponse(s, items))
+}
+
+func scheduleEventPayload(values map[string]any) []byte {
+	payload, err := json.Marshal(values)
+	if err != nil {
+		return []byte("{}")
+	}
+	return payload
 }
 
 // Get handles GET /schedules/{id}.

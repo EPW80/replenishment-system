@@ -165,8 +165,8 @@ func TestRunAllContinuesPastASendFailure(t *testing.T) {
 	d := notify.New(repo, sender, "support@example.com", nil)
 
 	res, err := d.RunAll(ctx)
-	if err != nil {
-		t.Fatalf("RunAll: %v", err)
+	if err == nil {
+		t.Fatal("RunAll returned nil error despite a failed send")
 	}
 	if res.Claimed != 2 || res.Sent != 1 || res.SendFailed != 1 {
 		t.Fatalf("result = %+v, want 2 claimed, 1 sent, 1 send-failed", res)
@@ -188,7 +188,7 @@ func TestRunAllRetriesAFailedSendOnALaterRun(t *testing.T) {
 	d := notify.New(repo, sender, "support@example.com", nil)
 
 	first, err := d.RunAll(ctx)
-	if err != nil || first.SendFailed != 1 {
+	if err == nil || first.SendFailed != 1 {
 		t.Fatalf("first run: %+v, err %v", first, err)
 	}
 
@@ -224,19 +224,21 @@ func TestRunAllRetriesAFailedSendOnALaterRun(t *testing.T) {
 // Each of the four event types must render without error and produce distinct,
 // non-empty content -- a template that panics or renders blank would fail silently
 // as a SendFailed outcome, not a build error.
-// The paused-until date must come from the schedule's own current state, not from
-// whatever the triggering event's payload happened to capture -- a reclaimed or
-// delayed send must not describe a paused_until a later transition already changed.
-// Here the schedule row carries a real date but the event payload is empty, which is
-// exactly the case a payload-only read would get wrong.
-func TestPausedEmailUsesTheScheduleRowNotTheEventPayload(t *testing.T) {
+// A delayed event must describe the transition that caused it, even if a later
+// transition has already changed the mutable schedule row.
+func TestPausedEmailUsesTheEventSnapshot(t *testing.T) {
 	repo := newRepo(t)
 	ctx := context.Background()
 
-	s := newScheduleWithEmail(t, repo, "customer@example.com", domain.EventSchedulePaused)
-	until := domain.NewDate(2026, time.June, 1)
-	if err := repo.UpdateScheduleStatus(ctx, s.ID, domain.SchedulePaused, &until); err != nil {
-		t.Fatalf("update schedule status: %v", err)
+	s := newScheduleWithEmail(t, repo, "customer@example.com", domain.EventOccurrencePlanned)
+	eventUntil := domain.NewDate(2026, time.June, 1)
+	if err := repo.AppendEvent(ctx, domain.ScheduleEvent{
+		ScheduleID: s.ID,
+		EventType:  domain.EventSchedulePaused,
+		Actor:      domain.ActorCustomer,
+		Payload:    []byte(`{"paused_until":"` + eventUntil.String() + `","occurrences_canceled":3}`),
+	}); err != nil {
+		t.Fatalf("append paused event: %v", err)
 	}
 
 	sender := newStubSender()
@@ -246,8 +248,8 @@ func TestPausedEmailUsesTheScheduleRowNotTheEventPayload(t *testing.T) {
 	}
 
 	body := sender.last().body
-	if !strings.Contains(body, until.String()) {
-		t.Errorf("body = %q, want it to contain the schedule's actual paused_until (%s)", body, until.String())
+	if !strings.Contains(body, eventUntil.String()) {
+		t.Errorf("body = %q, want it to contain the event's paused_until (%s)", body, eventUntil.String())
 	}
 	if strings.Contains(body, "stay paused until you resume") {
 		t.Errorf("body = %q, fell back to the indefinite-pause copy despite a real paused_until on the schedule", body)
@@ -331,6 +333,30 @@ func TestCanceledEmailUsesHumanReadableReason(t *testing.T) {
 	}
 	if strings.Contains(body, domain.ReasonTooExpensive) {
 		t.Errorf("body = %q, leaked the raw reason code %q", body, domain.ReasonTooExpensive)
+	}
+}
+
+func TestCanceledEmailKeepsNoLongerWantedCommercial(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	s := newScheduleWithEmail(t, repo, "customer@example.com", domain.EventOccurrencePlanned)
+	reason := domain.ReasonNoLongerWanted
+	if err := repo.AppendEvent(ctx, domain.ScheduleEvent{
+		ScheduleID: s.ID,
+		EventType:  domain.EventScheduleCanceled,
+		Actor:      domain.ActorCustomer,
+		ReasonCode: &reason,
+	}); err != nil {
+		t.Fatalf("append canceled event: %v", err)
+	}
+
+	sender := newStubSender()
+	if _, err := notify.New(repo, sender, "support@example.com", nil).RunAll(ctx); err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	body := sender.last().body
+	if !strings.Contains(body, "no longer wanted") || strings.Contains(body, "no longer needed") {
+		t.Errorf("body = %q, want commercial no-longer-wanted copy", body)
 	}
 }
 
