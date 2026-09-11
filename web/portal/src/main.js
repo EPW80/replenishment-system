@@ -12,10 +12,9 @@
  *        data-payment-url="/my-account/payment-methods"
  *        data-order-url="/my-account/view-order/{id}"></div>
  *
- * Two things cannot be expressed as attributes: the token exchange and, later, the
- * transition handlers. The host supplies those on `window.cadenceOSPortal` before this
- * module loads, and mountActiveSchedule is exported for a host that would rather mount
- * it itself:
+ * One thing cannot be expressed as an attribute: the token exchange. The host supplies
+ * it on `window.cadenceOSPortal` before this module loads, and mountActiveSchedule is
+ * exported for a host that would rather mount the widget itself:
  *
  *   window.cadenceOSPortal = { onReauthenticate: () => fetch('/wp-json/cadence/v1/token') };
  *
@@ -51,14 +50,9 @@ function boot() {
     // (spec §1), so the host decides what an order links to.
     orderURLTemplate: orderUrl,
     onReauthenticate: host.onReauthenticate,
-    // Screens 3, 4 and 5 do not exist yet, so the host has no transition handlers to
-    // pass and their controls do not render. See the note at the top of
-    // screen-active.js.
-    onChangeInterval: host.onChangeInterval,
-    onPause: host.onPause,
-    onSkip: host.onSkip,
-    onDefer: host.onDefer,
-    onCancel: host.onCancel,
+    // The transitions are the portal's own now -- it opens the sheets and calls the API
+    // itself, so the host supplies only what it alone knows (the URLs above) and the
+    // token exchange. Handlers passed here would be ignored.
   });
 }
 

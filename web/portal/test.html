@@ -35,6 +35,7 @@
 
   <script type="module">
     import {
+      addDays,
       chargesPhrase,
       countdownPhrase,
       countdownPhraseShort,
@@ -47,6 +48,8 @@
       todayIn,
     } from './src/dates.js';
     import { occurrenceStatus, scheduleStatus, splitOccurrences } from './src/status.js';
+    import { previewAnchor, previewDates } from './src/sheet-cadence.js';
+    import { deflectionIntervals } from './src/sheet-cancel.js';
 
     const results = [];
     const check = (name, actual, expected) => {
@@ -162,6 +165,41 @@
     );
     check('canceled rows are hidden', split.upcoming.concat(split.sent).some((o) => o.status === 'canceled'), false);
     check('empty list splits cleanly', splitOccurrences([]), { upcoming: [], sent: [] });
+
+    /* --- addDays stays on calendar dates ----------------------------------- */
+    check('addDays', addDays('2026-09-18', 7), '2026-09-25');
+    check('addDays across a month end', addDays('2026-10-25', 12), '2026-11-06');
+    check('addDays across a year end', addDays('2026-12-28', 7), '2027-01-04');
+    check('addDays across a leap day', addDays('2028-02-27', 3), '2028-03-01');
+
+    /* --- Cadence preview mirrors the service ------------------------------- */
+    // A cadence change re-anchors to the last placed order, so the preview counts from
+    // there -- and every date is anchor + n*interval, never a step from the last one.
+    const cadenceOccs = [
+      { sequence_no: 1, scheduled_for: '2026-07-24', status: 'placed' },
+      { sequence_no: 2, scheduled_for: '2026-08-21', status: 'placed' },
+      { sequence_no: 3, scheduled_for: '2026-09-18', status: 'planned' },
+    ];
+    check(
+      'preview anchors on the latest placed order',
+      previewAnchor(cadenceOccs, 'UTC', new Date('2026-09-11T12:00:00Z')),
+      { anchor: '2026-08-21', fromPlacedOrder: true },
+    );
+    // Nothing placed yet: the service anchors to today, so the preview must too.
+    check(
+      'preview falls back to today when nothing is placed',
+      previewAnchor([{ sequence_no: 1, scheduled_for: '2026-09-18', status: 'planned' }], 'UTC', new Date('2026-09-11T12:00:00Z')),
+      { anchor: '2026-09-11', fromPlacedOrder: false },
+    );
+    check('preview dates at 42 days', previewDates('2026-08-21', 42), ['2026-10-02', '2026-11-13', '2026-12-25']);
+    check('preview dates at 28 days', previewDates('2026-08-21', 28), ['2026-09-18', '2026-10-16', '2026-11-13']);
+
+    /* --- Cancel deflection -------------------------------------------------- */
+    check('deflection from 28 days offers 42 and 56', deflectionIntervals(28), [42, 56]);
+    check('deflection from 14 days offers 21 and 28', deflectionIntervals(14), [21, 28]);
+    // Clamped to the maximum the cadence endpoint accepts, and never duplicated.
+    check('deflection clamps at 180', deflectionIntervals(120), [180]);
+    check('deflection offers nothing at the ceiling', deflectionIntervals(180), []);
 
     /* --- Report ------------------------------------------------------------ */
     const failed = results.filter((r) => !r.ok);

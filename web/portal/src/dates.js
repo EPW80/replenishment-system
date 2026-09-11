@@ -91,6 +91,19 @@ export function daysBetween(fromISO, toISO) {
   return Math.round((parseCalendarDate(toISO) - parseCalendarDate(fromISO)) / MS_PER_DAY);
 }
 
+/** A calendar date `days` after `iso`, as YYYY-MM-DD.
+ *
+ *  This is for previewing what the service will do, never for deriving a date the
+ *  portal then treats as fact -- the response is what settles that. In particular a
+ *  cadence preview counts every date from the anchor (`anchor + n × interval`) rather
+ *  than stepping forward from the previous rendered date, which is the drift spec §3
+ *  exists to avoid. */
+export function addDays(iso, days) {
+  const d = parseCalendarDate(iso);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 /** Whole days from today, in the schedule's timezone, to a calendar date. */
 export function daysFromToday(iso, timeZone, now = new Date()) {
   return daysBetween(todayIn(timeZone, now), iso);
