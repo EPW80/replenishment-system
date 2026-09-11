@@ -304,6 +304,20 @@ func TestIdempotencyKey(t *testing.T) {
 	}
 }
 
+func TestNormalizeDiscountPct(t *testing.T) {
+	for _, valid := range []float64{0, 10, 10.25, 100} {
+		got, err := NormalizeDiscountPct(valid)
+		if err != nil || got != valid {
+			t.Errorf("NormalizeDiscountPct(%v) = %v, %v", valid, got, err)
+		}
+	}
+	for _, invalid := range []float64{-0.01, 10.999, 100.01} {
+		if _, err := NormalizeDiscountPct(invalid); err == nil {
+			t.Errorf("NormalizeDiscountPct(%v) succeeded, want error", invalid)
+		}
+	}
+}
+
 func TestDateComparisons(t *testing.T) {
 	a := NewDate(2026, time.March, 15)
 	b := NewDate(2026, time.March, 16)

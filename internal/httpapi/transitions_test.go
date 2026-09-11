@@ -106,6 +106,17 @@ func TestResumeEndpoint(t *testing.T) {
 	}
 }
 
+func TestTransitionEndpointRejectsTrailingJSONDocument(t *testing.T) {
+	h, repo, _ := newAPI(t)
+	s := newScheduleWithHorizon(t, repo)
+
+	rec := do(t, h, http.MethodPost, "/schedules/"+s.ID+"/cadence",
+		`{"interval_days":60} {"interval_days":90}`, customerCred(t, s.CustomerID))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for a second JSON document (body: %s)", rec.Code, rec.Body.String())
+	}
+}
+
 // A retried skip or defer request — same idempotency_key — must come back 200 without
 // acting a second time. This is the HTTP-visible half of docs/adr/0009: a client that
 // times out and retries must not risk a second occurrence disappearing.

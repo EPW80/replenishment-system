@@ -7,6 +7,7 @@ package domain
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -100,6 +101,21 @@ func ValidateInterval(intervalDays int) error {
 			MinIntervalDays, MaxIntervalDays, intervalDays)
 	}
 	return nil
+}
+
+// NormalizeDiscountPct validates a percentage and returns the exact two-decimal
+// representation persisted by PostgreSQL's numeric(5,2) column. Rejecting excess
+// precision keeps the create response from disagreeing with a later read after the
+// database has rounded the value.
+func NormalizeDiscountPct(discountPct float64) (float64, error) {
+	if math.IsNaN(discountPct) || math.IsInf(discountPct, 0) || discountPct < 0 || discountPct > 100 {
+		return 0, fmt.Errorf("discount_pct must be between 0 and 100, got %v", discountPct)
+	}
+	rounded := math.Round(discountPct*100) / 100
+	if math.Abs(discountPct-rounded) > 1e-9 {
+		return 0, fmt.Errorf("discount_pct must have at most two decimal places, got %v", discountPct)
+	}
+	return rounded, nil
 }
 
 // OccurrenceDate returns the date of the nth occurrence of a schedule.

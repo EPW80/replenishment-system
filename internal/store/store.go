@@ -222,6 +222,11 @@ func (r *PostgresRepository) CreateSchedule(ctx context.Context, s domain.Schedu
 	if err := domain.ValidateInterval(s.IntervalDays); err != nil {
 		return err
 	}
+	discountPct, err := domain.NormalizeDiscountPct(s.DiscountPct)
+	if err != nil {
+		return err
+	}
+	s.DiscountPct = discountPct
 	if _, err := time.LoadLocation(s.Timezone); err != nil {
 		return fmt.Errorf("invalid timezone %q: %w", s.Timezone, err)
 	}

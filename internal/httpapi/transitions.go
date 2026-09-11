@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -44,12 +43,7 @@ func decode(w http.ResponseWriter, r *http.Request, dst any) error {
 	if r.ContentLength == 0 {
 		return nil
 	}
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(dst); err != nil {
-		return err
-	}
-	return nil
+	return decodeJSON(w, r, dst)
 }
 
 // respond turns a service result into a response.
