@@ -86,20 +86,22 @@ export function openCancelSheet({ schedule, onDone, onError, onChangeInterval, o
               textContent: `You are on ${schedule.interval_days} days. Moving to ${longer}${longest ? ` or ${longest}` : ''} keeps the recurring discount and stretches out the deliveries.`,
             }),
             el('div', { className: 'cad-chiprow' }, [
+              /* `dismiss` refuses while the cancellation itself is in flight, and these
+               * two must respect that answer: the submit button is disabled then, but
+               * these are not, so proceeding anyway would start a cadence change or a
+               * pause racing a cancel the customer has already confirmed. */
               canChangeCadence &&
                 button({
                   label: `Go to ${longer} days`,
                   onClick: () => {
-                    dismiss();
-                    onChangeInterval(longer);
+                    if (dismiss()) onChangeInterval(longer);
                   },
                 }),
               canPause &&
                 button({
                   label: 'Pause instead',
                   onClick: () => {
-                    dismiss();
-                    onPause();
+                    if (dismiss()) onPause();
                   },
                 }),
             ]),

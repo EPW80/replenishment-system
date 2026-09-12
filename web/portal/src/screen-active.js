@@ -119,6 +119,10 @@ export function mountActiveSchedule(root, config) {
    */
   function applyTransition(schedule) {
     state.schedule = { phase: 'ready', data: schedule };
+    // A transition that succeeded settles whatever an earlier one failed at. Without
+    // this the band from a failed resume outlives it -- still on screen after the
+    // customer has since paused successfully, describing a problem that is over.
+    state.actionError = null;
     paint();
     fetchHalf('occurrences', () => getOccurrences(scheduleID));
   }
