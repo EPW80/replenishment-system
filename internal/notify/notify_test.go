@@ -221,9 +221,6 @@ func TestRunAllRetriesAFailedSendOnALaterRun(t *testing.T) {
 	}
 }
 
-// Each of the four event types must render without error and produce distinct,
-// non-empty content -- a template that panics or renders blank would fail silently
-// as a SendFailed outcome, not a build error.
 // A delayed event must describe the transition that caused it, even if a later
 // transition has already changed the mutable schedule row.
 func TestPausedEmailUsesTheEventSnapshot(t *testing.T) {
@@ -256,23 +253,16 @@ func TestPausedEmailUsesTheEventSnapshot(t *testing.T) {
 	}
 }
 
+// Every event type this package sends for must render without error and produce
+// non-empty content -- a template that panics or renders blank would surface as a
+// SendFailed outcome at run time, not as a build error.
 func TestRunAllRendersEveryEventType(t *testing.T) {
 	repo := newRepo(t)
 	ctx := context.Background()
 
-	cases := []struct {
-		name      string
-		eventType string
-	}{
-		{"created", domain.EventScheduleCreated},
-		{"paused", domain.EventSchedulePaused},
-		{"resumed", domain.EventScheduleResumed},
-		{"canceled", domain.EventScheduleCanceled},
-	}
-
-	for _, tc := range cases {
+	for _, tc := range everyEventType {
 		t.Run(tc.name, func(t *testing.T) {
-			newScheduleWithEmail(t, repo, tc.name+"@example.com", tc.eventType)
+			tc.setup(t, repo, tc.name+"@example.com")
 
 			sender := newStubSender()
 			d := notify.New(repo, sender, "support@example.com", nil)
@@ -405,5 +395,236 @@ func TestConcurrentRunAllNeverDoubleSends(t *testing.T) {
 		if n != 1 {
 			t.Errorf("%s received %d emails, want exactly 1", to, n)
 		}
+	}
+}
+
+// ------------------------------------------------------- pre-billing notice
+
+// armedDate is the date the seeded pending occurrence is scheduled for. Fixed so the
+// assertions below are arithmetic rather than a function of when the suite runs.
+var armedDate = domain.NewDate(2026, time.February, 1)
+
+// newArmedSchedule creates an active schedule with one pending occurrence and the
+// occurrence.armed event announcing it — the state internal/sweep.ArmDue leaves behind.
+//
+// The occurrence is a real row rather than an event payload alone, because the
+// pre-billing notice is resolved against the live occurrence at send time.
+func newArmedSchedule(t *testing.T, repo *store.PostgresRepository, email string) (domain.Schedule, domain.Occurrence) {
+	t.Helper()
+	ctx := context.Background()
+
+	s := domain.Schedule{
+		ID:            uuid.NewString(),
+		CustomerID:    "cust_" + uuid.NewString()[:8],
+		CustomerEmail: email,
+		OriginOrderID: "order_" + uuid.NewString(),
+		Status:        domain.ScheduleActive,
+		IntervalDays:  30,
+		AnchorDate:    domain.NewDate(2026, time.January, 1),
+		Timezone:      "UTC",
+	}
+	if err := repo.CreateSchedule(ctx, s, []domain.ScheduleItem{
+		{ID: uuid.NewString(), ScheduleID: s.ID, SKU: "SKU-001", Quantity: 2},
+	}); err != nil {
+		t.Fatalf("create schedule: %v", err)
+	}
+
+	occ := domain.Occurrence{
+		ID:             uuid.NewString(),
+		ScheduleID:     s.ID,
+		SequenceNo:     1,
+		ScheduledFor:   armedDate,
+		Status:         domain.OccurrencePending,
+		IdempotencyKey: domain.IdempotencyKey(s.ID, 1),
+	}
+	if err := repo.CreateOccurrence(ctx, occ); err != nil {
+		t.Fatalf("create occurrence: %v", err)
+	}
+
+	if err := repo.AppendEvent(ctx, domain.ScheduleEvent{
+		ScheduleID: s.ID,
+		EventType:  domain.EventOccurrenceArmed,
+		Actor:      domain.ActorSystem,
+		Payload:    []byte(fmt.Sprintf(`{"sequence_no":1,"scheduled_for":%q}`, armedDate.String())),
+	}); err != nil {
+		t.Fatalf("append event: %v", err)
+	}
+	return s, occ
+}
+
+// everyEventType is the full set this package sends for, each with the setup its
+// template needs. Shared by the render and copy-rule tests so neither can quietly fall
+// behind notifiableEventTypes.
+var everyEventType = []struct {
+	name  string
+	setup func(t *testing.T, repo *store.PostgresRepository, email string)
+}{
+	{"created", func(t *testing.T, r *store.PostgresRepository, e string) {
+		newScheduleWithEmail(t, r, e, domain.EventScheduleCreated)
+	}},
+	{"paused", func(t *testing.T, r *store.PostgresRepository, e string) {
+		newScheduleWithEmail(t, r, e, domain.EventSchedulePaused)
+	}},
+	{"resumed", func(t *testing.T, r *store.PostgresRepository, e string) {
+		newScheduleWithEmail(t, r, e, domain.EventScheduleResumed)
+	}},
+	{"canceled", func(t *testing.T, r *store.PostgresRepository, e string) {
+		newScheduleWithEmail(t, r, e, domain.EventScheduleCanceled)
+	}},
+	{"armed", func(t *testing.T, r *store.PostgresRepository, e string) {
+		newArmedSchedule(t, r, e)
+	}},
+}
+
+// Spec §7 asks the pre-billing notice for "what's shipping, when charged".
+func TestArmedEmailListsItemsAndChargeDate(t *testing.T) {
+	repo := newRepo(t)
+	newArmedSchedule(t, repo, "armed@example.com")
+
+	sender := newStubSender()
+	res, err := notify.New(repo, sender, "support@example.com", nil).RunAll(context.Background())
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if res.Sent != 1 {
+		t.Fatalf("result = %+v, want exactly one sent", res)
+	}
+
+	body := sender.last().body
+	if !strings.Contains(body, armedDate.String()) {
+		t.Errorf("body does not state the charge date %s:\n%s", armedDate, body)
+	}
+	if !strings.Contains(body, "SKU-001") {
+		t.Errorf("body does not say what is shipping:\n%s", body)
+	}
+}
+
+// The window exists so the customer can stop the charge. If they did, announcing it
+// anyway is worse than saying nothing — and the outbox row must still be resolved, or
+// every later run reconsiders an order that is never coming.
+func TestArmedEmailIsSupersededWhenTheOrderIsSkipped(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	_, occ := newArmedSchedule(t, repo, "skipped@example.com")
+
+	if err := repo.UpdateOccurrenceStatus(ctx, occ.ID, domain.OccurrenceSkipped); err != nil {
+		t.Fatalf("skip occurrence: %v", err)
+	}
+
+	sender := newStubSender()
+	d := notify.New(repo, sender, "support@example.com", nil)
+	res, err := d.RunAll(ctx)
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if res.Sent != 0 || res.Superseded != 1 {
+		t.Errorf("result = %+v, want nothing sent and one superseded", res)
+	}
+	if sender.count() != 0 {
+		t.Errorf("%d emails sent for a skipped order, want 0", sender.count())
+	}
+
+	// Resolved, not left pending: a second run must find nothing to reconsider.
+	res, err = d.RunAll(ctx)
+	if err != nil {
+		t.Fatalf("second RunAll: %v", err)
+	}
+	if res.Claimed != 0 {
+		t.Errorf("claimed = %d on the second run, want 0 — the row was not resolved", res.Claimed)
+	}
+}
+
+// The pin on this package's one exception to the payload-snapshot rule (PR #59): a
+// deferred order's notice must state the date it will actually be charged, not the one
+// captured when it was armed. Snapshot rendering is right for the past-tense
+// confirmations and wrong here, because this email promises a future charge the
+// customer is invited to change — and changing it is exactly what they did.
+func TestArmedEmailUsesTheLiveDateNotTheEventSnapshot(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	_, occ := newArmedSchedule(t, repo, "deferred@example.com")
+
+	moved := armedDate.AddDays(7)
+	if err := repo.UpdateOccurrenceDate(ctx, occ.ID, moved); err != nil {
+		t.Fatalf("defer occurrence: %v", err)
+	}
+
+	sender := newStubSender()
+	res, err := notify.New(repo, sender, "support@example.com", nil).RunAll(ctx)
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if res.Sent != 1 {
+		t.Fatalf("result = %+v, want exactly one sent", res)
+	}
+
+	body := sender.last().body
+	if !strings.Contains(body, moved.String()) {
+		t.Errorf("body does not state the deferred date %s:\n%s", moved, body)
+	}
+	if strings.Contains(body, armedDate.String()) {
+		t.Errorf("body still states the pre-defer date %s — it was read from the event "+
+			"snapshot instead of the live occurrence:\n%s", armedDate, body)
+	}
+}
+
+// A schedule with no address takes the existing skipped path, before the occurrence is
+// ever resolved — the address check is cheaper and its outcome is the same either way.
+func TestArmedEmailWithNoAddressIsSkipped(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	newArmedSchedule(t, repo, "")
+
+	sender := newStubSender()
+	res, err := notify.New(repo, sender, "support@example.com", nil).RunAll(ctx)
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if res.Skipped != 1 || res.Sent != 0 || res.Superseded != 0 {
+		t.Errorf("result = %+v, want exactly one skipped", res)
+	}
+}
+
+// Spec §2's copy rule — "when to reorder," never "when to take" — reaches these
+// templates, and nothing mechanical enforces it: internal/compliance scans .go and .sql
+// only, and skips comments and string literals even there, so templates/*.html sits
+// outside every automated guard. This is that guard.
+//
+// The word list is the one internal/domain and internal/httpapi already assert against,
+// so all three surfaces are held to the same vocabulary.
+func TestEveryTemplateFollowsTheCopyRule(t *testing.T) {
+	banned := []string{
+		"take", "taking", "dose", "doses", "dosage", "supply", "run out", "running out",
+		"remaining", "intake", "consume", "consumption", "refill", "your body",
+	}
+
+	for _, tc := range everyEventType {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newRepo(t)
+			tc.setup(t, repo, tc.name+"@example.com")
+
+			sender := newStubSender()
+			res, err := notify.New(repo, sender, "support@example.com", nil).RunAll(context.Background())
+			if err != nil {
+				t.Fatalf("RunAll: %v", err)
+			}
+			if res.Sent != 1 {
+				t.Fatalf("result = %+v, want exactly one sent", res)
+			}
+
+			got := sender.last()
+			for _, field := range []struct{ name, text string }{
+				{"subject", got.subject},
+				{"body", got.body},
+			} {
+				lower := strings.ToLower(field.text)
+				for _, w := range banned {
+					if strings.Contains(lower, w) {
+						t.Errorf("%s contains %q — spec §2's copy rule is \"when to reorder,\" "+
+							"never \"when to take\":\n%s", field.name, w, field.text)
+					}
+				}
+			}
+		})
 	}
 }

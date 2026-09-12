@@ -1,0 +1,14 @@
+{{define "subject"}}Your next order is on its way to being placed{{end}}
+{{define "body"}}
+<p>Your next recurring order is scheduled for {{.ChargeDate}}. We will charge the card
+on file and place it that day.</p>
+<ul>
+{{range .Items}}<li>{{.Quantity}} &times; {{.SKU}}</li>
+{{end}}</ul>
+<p>If you would rather not receive it yet, you can skip this one or push it back from
+your account before {{.ChargeDate}} and nothing will be charged. Skipping affects only
+this order &mdash; the ones after it keep their dates.</p>
+<p>If you want a longer gap every time instead, change the interval from your account
+rather than skipping each order.</p>
+<p>Questions? Contact {{.SupportContact}}.</p>
+{{end}}

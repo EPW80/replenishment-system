@@ -25,6 +25,7 @@ var templates = map[string]*template.Template{
 	domain.EventSchedulePaused:   template.Must(template.ParseFS(templateFS, "templates/schedule_paused.html")),
 	domain.EventScheduleResumed:  template.Must(template.ParseFS(templateFS, "templates/schedule_resumed.html")),
 	domain.EventScheduleCanceled: template.Must(template.ParseFS(templateFS, "templates/schedule_canceled.html")),
+	domain.EventOccurrenceArmed:  template.Must(template.ParseFS(templateFS, "templates/occurrence_armed.html")),
 }
 
 // cancellationReasonText turns a closed-set reason code (internal/domain/transitions.go)
@@ -57,10 +58,22 @@ type templateData struct {
 	PausedUntil    string // "" means paused indefinitely
 	ReasonText     string // "" renders no parenthetical in schedule_canceled
 	SupportContact string
+
+	// ChargeDate is the date the armed order will be charged and placed, read from
+	// the occurrence as it stands at send time rather than from the event snapshot.
+	// Set only for occurrence.armed; see render's note on the exception.
+	ChargeDate string
 }
 
 // render produces the subject and HTML body for one claimed event.
-func render(e domain.NotifiableEvent, s domain.Schedule, items []domain.ScheduleItem, supportContact string) (subject, body string, err error) {
+//
+// occ is non-nil only for occurrence.armed, and only after the caller has confirmed it
+// is still pending. Its date is used in preference to anything in the event payload:
+// the pre-billing notice is a statement about a charge that has not happened yet, so it
+// must describe the occurrence as it stands now, not as it stood when armed. See the
+// note on applyEventSnapshot for why that is the opposite of what the other four
+// templates do.
+func render(e domain.NotifiableEvent, s domain.Schedule, items []domain.ScheduleItem, occ *domain.Occurrence, supportContact string) (subject, body string, err error) {
 	tmpl, ok := templates[e.EventType]
 	if !ok {
 		return "", "", fmt.Errorf("%w: %s", errNoTemplate, e.EventType)
@@ -70,6 +83,9 @@ func render(e domain.NotifiableEvent, s domain.Schedule, items []domain.Schedule
 		IntervalDays:   s.IntervalDays,
 		AnchorDate:     s.AnchorDate.String(),
 		SupportContact: supportContact,
+	}
+	if occ != nil {
+		data.ChargeDate = occ.ScheduledFor.String()
 	}
 	if s.NextRunDate != nil {
 		data.NextOrderDate = s.NextRunDate.String()
@@ -104,6 +120,16 @@ func render(e domain.NotifiableEvent, s domain.Schedule, items []domain.Schedule
 // applyEventSnapshot replaces mutable schedule fields with the values captured by
 // the event. Empty legacy payloads fall back to the current row so pre-snapshot
 // events remain deliverable.
+//
+// occurrence.armed has no case here on purpose, and the omission is load-bearing
+// rather than an oversight. The four events below are past-tense confirmations — a
+// schedule *was* paused, and a delayed email should still say what it was paused to.
+// The pre-billing notice is future-tense: it promises a charge the customer is
+// explicitly invited to stop, and arming and dispatch are separate scheduled tasks, so
+// they can skip or defer in between. Rendering its date from this snapshot would state
+// a charge that is no longer coming. Dispatcher.dispatchOne re-reads the live
+// occurrence instead, and declines to send at all when it is no longer pending. Do not
+// "restore consistency" by adding a case here.
 func applyEventSnapshot(data *templateData, e domain.NotifiableEvent) error {
 	if len(e.Payload) == 0 || string(e.Payload) == "{}" {
 		return nil

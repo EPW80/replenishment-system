@@ -141,6 +141,15 @@ type Repository interface {
 	// target.
 	NextPlannedOccurrence(ctx context.Context, scheduleID string) (domain.Occurrence, error)
 
+	// GetOccurrenceBySequence returns one occurrence by its per-schedule sequence
+	// number, or ErrNotFound.
+	//
+	// (schedule_id, sequence_no) is already UNIQUE (occurrences_sequence_unique) and is
+	// what an occurrence.armed event records, so it is the stable handle on "the
+	// occurrence this notification is about" -- internal/notify re-reads it at send
+	// time to decide whether the pre-billing notice is still true.
+	GetOccurrenceBySequence(ctx context.Context, scheduleID string, sequenceNo int) (domain.Occurrence, error)
+
 	LastPlacedOccurrence(ctx context.Context, scheduleID string) (domain.Occurrence, error)
 	LatestScheduledDate(ctx context.Context, scheduleID string) (*domain.Date, error)
 
@@ -840,6 +849,12 @@ func (r *PostgresRepository) NextPlannedOccurrence(ctx context.Context, schedule
 	return r.queryOneOccurrence(ctx, `
 		WHERE schedule_id = $1 AND status = 'planned'
 		ORDER BY scheduled_for, sequence_no LIMIT 1`, scheduleID)
+}
+
+// GetOccurrenceBySequence is documented on Repository.
+func (r *PostgresRepository) GetOccurrenceBySequence(ctx context.Context, scheduleID string, sequenceNo int) (domain.Occurrence, error) {
+	return r.queryOneOccurrence(ctx,
+		`WHERE schedule_id = $1 AND sequence_no = $2`, scheduleID, sequenceNo)
 }
 
 // LastPlacedOccurrence returns the most recently placed occurrence, or ErrNotFound if

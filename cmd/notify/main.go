@@ -67,6 +67,7 @@ func main() {
 		"claimed", res.Claimed,
 		"sent", res.Sent,
 		"skipped", res.Skipped,
+		"superseded", res.Superseded,
 		"send_failed", res.SendFailed)
 
 	if err != nil {
