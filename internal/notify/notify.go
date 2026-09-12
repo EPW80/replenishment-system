@@ -1,6 +1,7 @@
 // Package notify sends the Phase 4 transactional emails (spec §7): schedule created,
-// paused, resumed, and canceled. The three billing-related sends (pre-billing notice,
-// order placed, dunning ladder) need Phase 2's order pipeline and are not here.
+// paused, resumed, canceled, and the pre-billing notice that spec §5 step 2 requires
+// when an occurrence is armed. The two remaining sends (order placed, dunning ladder)
+// need Phase 2's order pipeline and are not here.
 //
 // Delivery is deliberately at-least-once, not exactly-once (docs/adr/0010): a
 // duplicate confirmation email is cosmetic, unlike a duplicate occurrence or a
@@ -10,6 +11,7 @@ package notify
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -40,12 +42,22 @@ const maxAttempts = 5
 // per page rather than capping how much a single RunAll invocation can process.
 const batchSize = 200
 
-// notifiableEventTypes are the four spec §7 events this package sends for.
+// notifiableEventTypes are the spec §7 events this package sends for.
 var notifiableEventTypes = []string{
 	domain.EventScheduleCreated,
 	domain.EventSchedulePaused,
 	domain.EventScheduleResumed,
 	domain.EventScheduleCanceled,
+	domain.EventOccurrenceArmed,
+}
+
+// eventsNeedingItems are the events whose template lists what is shipping. Spec §7
+// asks the pre-billing notice for "what's shipping, when charged", so it needs the
+// same item load schedule.created does -- the other three describe the schedule, not
+// a shipment, and would only pay for a query they never render.
+var eventsNeedingItems = map[string]bool{
+	domain.EventScheduleCreated: true,
+	domain.EventOccurrenceArmed: true,
 }
 
 // Dispatcher sends outstanding notifications and records the outcome of each.
@@ -74,6 +86,13 @@ type Result struct {
 	Sent       int
 	Skipped    int // no customer_email on file — nothing to send, not a failure
 	SendFailed int // Postmark rejected or errored; recorded in notification_log
+
+	// Superseded counts pre-billing notices not sent because the customer acted on
+	// the occurrence first — they skipped, deferred past, or canceled it between the
+	// arm and this run. Distinct from Skipped, which is about a missing address: this
+	// one is the pre-billing window doing exactly what spec §5 step 2 built it for,
+	// and is never an error.
+	Superseded int
 }
 
 // RunAll claims and attempts every outstanding notification, paging through claims
@@ -108,6 +127,8 @@ func (d *Dispatcher) RunAll(ctx context.Context) (Result, error) {
 				res.Sent++
 			case outcomeSkipped:
 				res.Skipped++
+			case outcomeSuperseded:
+				res.Superseded++
 			case outcomeSendFailed:
 				res.SendFailed++
 				runErr = errors.Join(runErr, fmt.Errorf("notification send failed for schedule event %d", e.ScheduleEventID))
@@ -126,6 +147,7 @@ type outcome int
 const (
 	outcomeSent outcome = iota
 	outcomeSkipped
+	outcomeSuperseded
 	outcomeSendFailed
 )
 
@@ -154,15 +176,41 @@ func (d *Dispatcher) dispatchOne(ctx context.Context, e domain.NotifiableEvent) 
 		return outcomeSkipped, nil
 	}
 
+	// The pre-billing notice states a charge that has not happened yet, so it is
+	// resolved against the occurrence as it stands now rather than as the event
+	// recorded it. This is a deliberate exception to the snapshot rule the other four
+	// emails follow (see render.applyEventSnapshot): they are past-tense confirmations,
+	// true forever once recorded, while this one is a claim about the future that the
+	// customer is invited to falsify. Arming and dispatch are separate scheduled tasks,
+	// so a customer can skip or defer in between -- which is precisely what spec §5
+	// step 2 opens the window for.
+	var occ *domain.Occurrence
+	if e.EventType == domain.EventOccurrenceArmed {
+		current, resolveErr := d.armedOccurrence(ctx, e)
+		if resolveErr != nil {
+			return 0, resolveErr
+		}
+		if current.Status != domain.OccurrencePending {
+			// Skipped, deferred past the window, canceled, or already placed. Sending
+			// now would announce a charge that is not coming. Resolve the outbox row
+			// so it is not reconsidered every run, exactly as the no-address path does.
+			if err := d.repo.MarkNotificationSent(ctx, e.ScheduleEventID, d.now()); err != nil {
+				return 0, fmt.Errorf("mark superseded: %w", err)
+			}
+			return outcomeSuperseded, nil
+		}
+		occ = &current
+	}
+
 	var items []domain.ScheduleItem
-	if e.EventType == domain.EventScheduleCreated {
+	if eventsNeedingItems[e.EventType] {
 		items, err = d.repo.ListScheduleItems(ctx, e.ScheduleID, store.SystemScope())
 		if err != nil {
 			return 0, fmt.Errorf("list items for %s: %w", e.ScheduleID, err)
 		}
 	}
 
-	subject, body, err := render(e, s, items, d.supportContact)
+	subject, body, err := render(e, s, items, occ, d.supportContact)
 	if err != nil {
 		return 0, fmt.Errorf("render %s: %w", e.EventType, err)
 	}
@@ -178,6 +226,32 @@ func (d *Dispatcher) dispatchOne(ctx context.Context, e domain.NotifiableEvent) 
 		return 0, fmt.Errorf("mark sent: %w", err)
 	}
 	return outcomeSent, nil
+}
+
+// armedOccurrence resolves the occurrence an occurrence.armed event refers to, as it
+// stands now.
+//
+// The event's payload carries sequence_no, and (schedule_id, sequence_no) is UNIQUE,
+// so it identifies the occurrence stably even after a defer moves its date. A payload
+// without it, or a sequence number matching no row, is an infrastructure error rather
+// than a reason to send: the alternative is guessing which order the notice is about,
+// and guessing wrong means telling a customer about a charge that is not theirs.
+func (d *Dispatcher) armedOccurrence(ctx context.Context, e domain.NotifiableEvent) (domain.Occurrence, error) {
+	var snapshot struct {
+		SequenceNo *int `json:"sequence_no"`
+	}
+	if err := json.Unmarshal(e.Payload, &snapshot); err != nil {
+		return domain.Occurrence{}, fmt.Errorf("decode armed payload for event %d: %w", e.ScheduleEventID, err)
+	}
+	if snapshot.SequenceNo == nil {
+		return domain.Occurrence{}, fmt.Errorf("armed event %d has no sequence_no", e.ScheduleEventID)
+	}
+
+	occ, err := d.repo.GetOccurrenceBySequence(ctx, e.ScheduleID, *snapshot.SequenceNo)
+	if err != nil {
+		return domain.Occurrence{}, fmt.Errorf("get occurrence %s#%d: %w", e.ScheduleID, *snapshot.SequenceNo, err)
+	}
+	return occ, nil
 }
 
 // errNoTemplate is wrapped with the event type so a future event type added to
