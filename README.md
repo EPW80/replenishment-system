@@ -13,6 +13,15 @@ service owns schedules; WooCommerce owns catalog, checkout, payment, and fulfill
 That split is what lets the same service deploy behind a second brand as a
 configuration change rather than a rewrite.
 
+![The CadenceOS customer portal: an active recurring order showing the next charge date, interval, what ships each time, and the upcoming orders list with skip and push-back controls](docs/images/portal-recurring-orders.png)
+
+The customer-facing surface: the portal widget in `web/portal`, rendered by
+`cmd/portaldev` against a live local service. In production the same stylesheet and
+module are printed by a WordPress theme (spec §4). Bracketed values are placeholders
+for facts WooCommerce owns and this service deliberately does not store — product
+names, prices, the shipping address. Every string on the page is about *when the next
+order ships*, which is the compliance boundary below doing its job.
+
 ---
 
 ## Compliance boundary
@@ -71,6 +80,19 @@ and the occurrence timeline against the same API used by WooCommerce. Enter a po
 JWT and its customer ID under **API connection**; add the service key when testing
 schedule creation. Credentials are kept in browser session storage and are cleared
 when that browser tab is closed.
+
+To see the customer portal shown above, create a schedule (via the console or
+`POST /schedules`), run `make materialize` so it has occurrences, then serve the widget
+against it:
+
+```sh
+go run ./cmd/portaldev -customer <customer-id> -schedule <schedule-id>
+# then open http://127.0.0.1:8081/
+```
+
+`cmd/portaldev` stands in for the WordPress mu-plugin: it mints a portal JWT per
+request and proxies `/api` to the service, so the widget can be developed against the
+real API. It binds to loopback only and is never deployed.
 
 ```sh
 make lint      # gofmt, go vet, staticcheck
