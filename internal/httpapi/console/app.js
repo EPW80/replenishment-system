@@ -269,32 +269,35 @@ function renderDetail() {
   if (!schedule) return;
   elements.content.innerHTML = `
     <div class="page-header">
-      <div><span class="eyebrow">Recurring order</span><h1>${escapeHTML(schedule.items?.[0]?.sku || 'Schedule detail')}</h1><p class="lede mono">${escapeHTML(schedule.id)}</p></div>
-      ${pill(schedule.status)}
+      <div><span class="eyebrow">Recurring order</span><h1>${escapeHTML(schedule.items?.[0]?.sku || 'Schedule detail')}</h1><p class="schedule-id mono">${escapeHTML(schedule.id)}</p></div>
+      <div class="header-status">${pill(schedule.status)}<span>Every ${escapeHTML(schedule.interval_days)} days</span></div>
     </div>
-    <article class="card">
-      <section class="card-section">
-        <div class="section-heading"><div><h2>Schedule</h2><p>Order timing and checkout references</p></div></div>
-        <dl class="facts">
-          <div class="fact"><dt>Next order</dt><dd>${escapeHTML(formatDate(schedule.next_run_date))}</dd></div>
-          <div class="fact"><dt>Interval</dt><dd>Every ${escapeHTML(schedule.interval_days)} days</dd></div>
-          <div class="fact"><dt>Started</dt><dd>${escapeHTML(formatDate(schedule.anchor_date))}</dd></div>
-          <div class="fact"><dt>Time zone</dt><dd>${escapeHTML(schedule.timezone)}</dd></div>
-          <div class="fact"><dt>Origin order</dt><dd class="mono">${escapeHTML(schedule.origin_order_id)}</dd></div>
-          <div class="fact"><dt>Recurring discount</dt><dd>${escapeHTML(schedule.discount_pct)}%</dd></div>
-          ${schedule.paused_until ? `<div class="fact"><dt>Resumes</dt><dd>${escapeHTML(formatDate(schedule.paused_until))}</dd></div>` : ''}
-        </dl>
+    <section class="next-order-card">
+      <div class="next-order-copy"><span class="eyebrow">Next order</span><strong>${escapeHTML(formatDate(schedule.next_run_date))}</strong><p>${schedule.status === 'paused' ? 'This schedule is paused. Resume it to place the next order.' : `Repeats every ${escapeHTML(schedule.interval_days)} days in ${escapeHTML(schedule.timezone)}.`}</p></div>
+      <div class="hero-actions">${actionButtons(schedule)}</div>
+    </section>
+    <div class="detail-grid">
+      <section class="panel timeline-panel">
+        <div class="panel-header"><div><span class="eyebrow">Order queue</span><h2>Occurrence timeline</h2></div><span class="record-count mono">${state.occurrences.filter(item => item.status !== 'canceled').length} records</span></div>
+        <div class="panel-body">${occurrenceRows()}</div>
       </section>
-      <section class="card-section">
-        <div class="section-heading"><div><h3>What ships each time</h3><p>SKU and quantity from the schedule API</p></div></div>
-        <ul class="item-list">${schedule.items.map(item => `<li><span class="mono">${escapeHTML(item.sku)}</span><strong>Quantity ${escapeHTML(item.quantity)}</strong></li>`).join('')}</ul>
-      </section>
-      <section class="card-section">
-        <div class="section-heading"><div><h3>Upcoming-occurrence timeline</h3><p>Scheduled, placed, skipped, and failed orders</p></div></div>
-        ${occurrenceRows()}
-      </section>
-      <section class="card-section action-bar">${actionButtons(schedule)}</section>
-    </article>`;
+      <aside class="detail-sidebar">
+        <section class="panel summary-panel">
+          <div class="panel-header"><div><span class="eyebrow">Configuration</span><h2>Schedule details</h2></div></div>
+          <dl class="summary-list">
+            <div class="fact"><dt>Started</dt><dd>${escapeHTML(formatDate(schedule.anchor_date))}</dd></div>
+            <div class="fact"><dt>Time zone</dt><dd>${escapeHTML(schedule.timezone)}</dd></div>
+            <div class="fact"><dt>Origin order</dt><dd class="mono">${escapeHTML(schedule.origin_order_id)}</dd></div>
+            <div class="fact"><dt>Recurring discount</dt><dd>${escapeHTML(schedule.discount_pct)}%</dd></div>
+            ${schedule.paused_until ? `<div class="fact"><dt>Resumes</dt><dd>${escapeHTML(formatDate(schedule.paused_until))}</dd></div>` : ''}
+          </dl>
+        </section>
+        <section class="panel items-panel">
+          <div class="panel-header"><div><span class="eyebrow">Shipment</span><h2>What ships</h2></div></div>
+          <ul class="item-list">${schedule.items.map(item => `<li><span><strong>${escapeHTML(item.sku)}</strong><small class="mono">Catalog SKU</small></span><b>× ${escapeHTML(item.quantity)}</b></li>`).join('')}</ul>
+        </section>
+      </aside>
+    </div>`;
 }
 
 function openDialog({ eyebrow = 'Schedule action', title, body, submitLabel = 'Continue', submitVariant = 'primary', onSubmit }) {
