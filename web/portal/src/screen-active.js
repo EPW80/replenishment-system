@@ -57,6 +57,8 @@ export function mountActiveSchedule(root, config) {
     occurrences: { phase: 'loading' },
     // Set by a sheet-less write that failed; see runDirect.
     actionError: null,
+    // True while a sheet-less write is in flight; see runDirect.
+    directPending: false,
   };
 
   // Both halves are in flight at once, so an expired token 401s both. They share one
@@ -136,16 +138,31 @@ export function mountActiveSchedule(root, config) {
    * instead, carrying the domain's message verbatim and a retry that re-runs the same
    * action. */
   async function runDirect(action, retry) {
+    /* One at a time, the same way a sheet's submit is.
+     *
+     * Without this a double-click sent two requests: the first succeeded, and the second
+     * came back "this schedule is already active", whose catch re-raised the very band
+     * this function had just cleared. The customer ended on a working schedule wearing a
+     * failure banner -- reachable for the length of a round trip, and exactly the
+     * misleading state the band was meant to remove.
+     *
+     * Refusing at the source beats filtering late rejections: if the losing request is
+     * never issued, there is nothing stale to recognise afterwards. */
+    if (state.directPending) return;
+
+    state.directPending = true;
     state.actionError = null;
     paint();
     try {
       applyTransition(await action());
     } catch (err) {
       state.actionError = { message: err.message, retry };
-      paint();
       // Same reasoning as a sheet's onError: a rejection usually means this view is
       // stale, so re-read underneath the message.
       load();
+    } finally {
+      state.directPending = false;
+      paint();
     }
   }
 
@@ -262,9 +279,13 @@ function view(state, config, handlers) {
         variant: 'crit',
         heading: 'That did not go through',
         text: state.actionError.message,
-        action: button({ label: 'Try again', onClick: state.actionError.retry }),
+        action: button({
+          label: 'Try again',
+          onClick: state.actionError.retry,
+          disabled: state.directPending,
+        }),
       }),
-    scheduleCard(state.schedule, config, handlers),
+    scheduleCard(state.schedule, config, handlers, state.directPending),
     queueCard(state, config, handlers),
     footer(config, state.schedule.phase === 'ready' ? state.schedule.data : null),
   ]);
@@ -309,7 +330,7 @@ function masthead({ brand = '[Brand]' }) {
  * Schedule card
  * ------------------------------------------------------------------------ */
 
-function scheduleCard(half, config, handlers) {
+function scheduleCard(half, config, handlers, directPending) {
   if (half.phase === 'loading') return card([headerSkeleton(), fieldsSkeleton()]);
   if (half.phase === 'error') return card([errorBand(half.error, handlers.onRetry)]);
 
@@ -341,7 +362,7 @@ function scheduleCard(half, config, handlers) {
           ]),
           nextOrderBlock(schedule),
         ]),
-        manageColumn(schedule, config),
+        manageColumn(schedule, config, directPending),
       ],
       { className: 'cad-section--header' },
     ),
@@ -418,7 +439,7 @@ function pausedSubtitle(schedule) {
  * schedule, resume needs a paused one, cadence accepts active or paused, and a canceled
  * schedule accepts nothing at all. Offering a control the service is certain to reject
  * with a 409 is not a safe default -- it is a button that exists only to fail. */
-function manageColumn(schedule, config) {
+function manageColumn(schedule, config, directPending) {
   if (schedule.status === 'canceled') return null;
 
   const controls = [];
@@ -431,7 +452,21 @@ function manageColumn(schedule, config) {
     controls.push(button({ label: 'Pause', icon: 'pause', onClick: config.onPause }));
   }
   if (schedule.status === 'paused') {
-    controls.push(button({ label: 'Resume now', variant: 'primary', onClick: config.onResume }));
+    /* The only control on this card that writes without a sheet, so it is the only one
+     * `runDirect`'s in-flight guard has to show. Disabled, the refusal is legible: a
+     * second click on a live-looking button that silently does nothing reads as a
+     * portal that has stopped responding.
+     *
+     * The other two open a sheet, which is not a write and carries its own submit
+     * guard, so they stay live. */
+    controls.push(
+      button({
+        label: 'Resume now',
+        variant: 'primary',
+        onClick: config.onResume,
+        disabled: directPending,
+      }),
+    );
   }
 
   return controls.length > 0 ? el('div', { className: 'cad-manage' }, controls) : null;
