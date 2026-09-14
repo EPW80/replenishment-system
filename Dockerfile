@@ -4,7 +4,7 @@
 # scheduled task (docs/SCHEDULED_JOBS.md) runs in this same image -- one image, one
 # build, one commit SHA for the service and its batch jobs alike.
 
-FROM golang:1.25.7-alpine AS build
+FROM golang:1.25.13-alpine AS build
 
 WORKDIR /src
 
