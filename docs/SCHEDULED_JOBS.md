@@ -98,15 +98,14 @@ Create two scheduled tasks on the CadenceOS application, per environment:
 | --- | --- |
 | Name | `notify` |
 | Command | `./scripts/notify.sh` |
-| Frequency | `0 10 * * *` |
+| Frequency | `*/5 * * * *` |
 | Container | the CadenceOS app container |
 
-`notify` is scheduled alongside `nightly` rather than depending on it: sweep's resume
-can itself create a notifiable event (a resumed schedule), and running notify in the
-same window means that email does not wait for a second night. The two tasks are
-independent processes, so their relative order within the window is not guaranteed;
-that is fine, since notify only ever sends for events already committed to
-`schedule_events`, whichever of the two runs first.
+`notify` runs independently every five minutes rather than depending on `nightly`:
+sweep's resume can itself create a notifiable event, and the next notification pass
+picks it up without waiting for another nightly window. The two tasks remain
+independent processes; notify only sends events already committed to
+`schedule_events`, so their relative start order does not matter.
 
 The task inherits the application's environment, so `DATABASE_URL` needs no separate
 configuration and the production credential never leaves Coolify's network.
